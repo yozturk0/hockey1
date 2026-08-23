@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Production servers must be wss:// (TLS). This exception only unlocks
+	     plain ws:// on the local network, so you can point the app at a laptop
+	     running `npm start` while developing. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Aynı Wi-Fi ağındaki oyun sunucusuna bağlanmak için kullanılır.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.airhockey.tr</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>airhockey</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

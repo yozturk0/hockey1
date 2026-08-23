@@ -1,0 +1,142 @@
+# Air Hockey — Online (Türkçe)
+
+Oda kodu paylaşarak oynanan gerçek zamanlı hava hokeyi. **Kayıt yok, hesap yok, indirme zorunluluğu yok.**
+Web tarayıcısındaki bir oyuncu ile iPhone uygulamasındaki bir oyuncu **aynı maçta** oynayabilir.
+
+```
+hockey1/
+├── server/server.js      Otoriter WebSocket sunucusu + statik site servisi
+├── web/                  Tarayıcı istemcisi (site burası)
+│   └── engine.js         Fizik motoru — sunucu da bu dosyayı kullanır
+├── ios/                  Xcode projesi (SwiftUI, yerel)
+├── test/                 Motor + sunucu testleri
+└── Dockerfile, fly.toml, render.yaml
+```
+
+---
+
+## 1. Hemen çalıştır (bilgisayarında)
+
+```bash
+npm install
+```
+
+```bash
+npm start
+```
+
+Tarayıcıdan `http://localhost:8080` — açılır. Aynı Wi-Fi'daki telefonundan denemek için
+bilgisayarının yerel IP'siyle aç: `http://192.168.1.20:8080` gibi.
+
+Testler:
+
+```bash
+npm test && npm run test:server
+```
+
+---
+
+## 2. Yayına alma — herkesin girebileceği bir adres
+
+> **Önemli:** Netlify / Vercel / GitHub Pages **işe yaramaz.** Bunlar yalnızca statik dosya
+> sunar; bu oyunun sürekli çalışan bir WebSocket sunucusuna ihtiyacı var. Daha önce
+> takıldığın nokta tam olarak buydu.
+
+Aşağıdakilerden **birini** seç. Üçü de ücretsiz katmanda WebSocket destekler.
+
+### Render (en kolay, hazır yapılandırma var)
+
+1. Projeyi bir GitHub deposuna yükle.
+2. [render.com](https://render.com) → **New → Blueprint** → depoyu seç.
+3. `render.yaml` otomatik okunur, **Apply** de.
+4. `https://air-hockey-xxxx.onrender.com` adresin hazır.
+
+Ücretsiz katman 15 dakika hareketsizlikten sonra uyur; ilk açılış ~30 saniye sürer.
+
+### Fly.io (uykuya dalmaz, Frankfurt bölgesi = Türkiye'ye düşük ping)
+
+```bash
+fly launch --copy-config --now
+```
+
+### Railway
+
+Depoyu bağla; kökteki `package.json` otomatik algılanır, ek ayar gerekmez.
+
+### Kendi sunucun (Docker)
+
+```bash
+docker build -t air-hockey . && docker run -p 8080:8080 air-hockey
+```
+
+Kendi sunucunda çalıştırıyorsan **mutlaka HTTPS/`wss://`** kullan (Caddy veya Nginx ile).
+Tarayıcılar `https://` sayfadan `ws://` bağlantısına izin vermez.
+
+---
+
+## 3. iPhone uygulaması
+
+```bash
+open ios/AirHockey.xcodeproj
+```
+
+1. **Signing & Capabilities** → *Team* olarak kendi Apple ID'ni seç.
+   (`PRODUCT_BUNDLE_IDENTIFIER` çakışırsa `com.airhockey.tr` yerine kendine ait bir şey yaz.)
+2. Üstten telefonunu seç, **⌘R**.
+3. Uygulamada ana menüdeki **⚙️** simgesine dokun → **Sunucu adresi** alanına yayına aldığın
+   adresi yaz (`https://air-hockey-xxxx.onrender.com`) → **Kaydet**.
+
+Varsayılan adres `http://localhost:8080`'dir; Xcode simülatöründe hiçbir şey değiştirmeden çalışır.
+Gerçek telefonda aynı Wi-Fi'daki bilgisayarını test etmek için `http://192.168.1.20:8080` yazabilirsin —
+`Info.plist` yerel ağ için gerekli izni içeriyor. **Genel internete açık sunucun `https://` olmalı.**
+
+Paylaşılan davet linkleri (`airhockey://oda/ABCD`) uygulamayı doğrudan o odada açar.
+
+---
+
+## 4. Nasıl oynanır
+
+**Online:** Bir oyuncu *Online Oyna → Oda Oluştur* der, 4 haneli kodu alır ve arkadaşına
+gönderir (Paylaş düğmesi hazır bir davet metni üretir). Diğeri kodu girip *Katıl* der.
+İki taraf da kendi ekranının **alt yarısında** kendini görür — kimse ters oynamaz.
+
+**Aynı telefonda 2 kişi:** Telefonu masaya koyun. Alt yarı bir oyuncunun, üst yarı diğerinin.
+Aynı anda iki parmak çalışır.
+
+**Bitiş skoru:** Maç başlamadan önce **5 / 7 / 9 / 11** seçebilir ya da kutuya
+istediğin sayıyı (1–15) yazabilirsin. Online oyunda skoru oda sahibi belirler.
+
+Rakip bağlantısı koparsa maç duraklar, skorlar korunur ve aynı kodla geri dönebilir.
+
+---
+
+## 5. Neden bu mimari?
+
+Fizik **yalnızca sunucuda** koşar; istemciler kendi sopalarının konumunu gönderir ve
+saniyede 60 kez durum anlık görüntüsü alır.
+
+- **İki oyuncu asla farklı bir oyun görmez.** Eşler arası (P2P) çözümlerde kaçınılmaz olan
+  "top ışınlanması" ve skor uyuşmazlığı ortadan kalkar.
+- **Kendi sopan asla gecikmeli hissettirmez:** yerel olarak anında çizilir, sunucunun
+  otoriter konumuna yumuşakça yaklaştırılır.
+- **Top akıcı görünür:** paketin yaşı kadar ileri sarılır (en fazla 140 ms) ve titreme
+  üstel yumuşatmayla temizlenir.
+- **Sesler sunucudan tetiklenir**, böylece iki oyuncu da vuruşu aynı anda duyar. Ses
+  tamamen sentezlenir — hiçbir ses dosyası yok, hiçbir yükleme beklemesi yok.
+- **iOS ve web aynı fiziği paylaşır:** `web/engine.js` ile `ios/AirHockey/Engine.swift`
+  birebir aynı davranışa sahiptir (aynı telefonda 2 kişi modu için).
+
+Sopa hızının topa aktarılması (`PAD_TRANSFER`), sekme katsayıları ve sürtünme
+`web/engine.js` dosyasının en üstündeki sabitlerden ayarlanabilir.
+
+---
+
+## 6. Takılırsan
+
+| Belirti | Sebebi |
+|---|---|
+| "Sunucuya bağlanılıyor…" hiç geçmiyor | Sunucu çalışmıyor ya da adres yanlış. `/health` adresini aç. |
+| `https://` sayfada bağlanmıyor | Sunucun `wss://` desteklemiyor. TLS şart. |
+| iPhone yerel IP'ye bağlanmıyor | Telefon ile bilgisayar aynı Wi-Fi'da mı? Güvenlik duvarı 8080'i kapatıyor olabilir. |
+| Oda kodu bulunamıyor | Odalar boş kaldıktan 90 sn sonra silinir; kurulan ama girilmeyen odalar 15 dk sonra. |
+| Ping yüksek | Sunucu bölgesini oyuncularına yakın seç (Fly.io için `fra`). |

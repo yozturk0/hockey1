@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Air Hockey — Online</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#070b14">
+<meta name="description" content="Arkadaşınla oda kodu paylaş, anında online hava hokeyi oyna. Kayıt yok, kurulum yok.">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Air Hockey">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============ MENÜ ============ -->
+<section class="screen" id="s-menu">
+  <div class="stack">
+    <div class="logo">
+      <span class="logo-a">AIR</span>
+      <span class="logo-b">HOCKEY</span>
+      <i class="logo-puck"></i>
+    </div>
+    <p class="tagline">Oda kodunu paylaş, anında oyna.<br>Kayıt yok, indirme yok.</p>
+
+    <div class="btns">
+      <button class="btn btn-primary" id="b-online">
+        <span class="btn-ico">🌐</span>
+        <span class="btn-txt"><b>Online Oyna</b><small>Arkadaşınla, uzaktan</small></span>
+      </button>
+      <button class="btn" id="b-local">
+        <span class="btn-ico">📱</span>
+        <span class="btn-txt"><b>Aynı Telefonda 2 Kişi</b><small>Tek ekran, çift dokunuş</small></span>
+      </button>
+    </div>
+
+    <label class="namefield">
+      <span>Adın</span>
+      <input id="i-name" type="text" maxlength="14" placeholder="Oyuncu" autocomplete="off" autocapitalize="words" spellcheck="false">
+    </label>
+  </div>
+  <footer class="foot"><span id="conn-dot" class="dot"></span><span id="conn-txt">Bağlanıyor…</span></footer>
+</section>
+
+<!-- ============ ONLINE SEÇİM ============ -->
+<section class="screen hidden" id="s-online">
+  <div class="stack">
+    <h2 class="title">Online Oyna</h2>
+
+    <div class="card">
+      <h3>Oda Oluştur</h3>
+      <p class="hint">Sen kur, kodu arkadaşına gönder.</p>
+      <div class="scorepick" id="pick-online">
+        <span class="scorepick-label">Kaç golde biter?</span>
+        <div class="chips">
+          <button class="chip" data-v="5">5</button>
+          <button class="chip" data-v="6">6</button>
+          <button class="chip is-on" data-v="7">7</button>
+          <button class="chip" data-v="8">8</button>
+          <input class="chip chip-input" id="t-online" type="number" inputmode="numeric" min="1" max="15" placeholder="…">
+        </div>
+      </div>
+      <button class="btn btn-primary" id="b-create">Oda Oluştur</button>
+    </div>
+
+    <div class="card">
+      <h3>Odaya Katıl</h3>
+      <p class="hint">Arkadaşının gönderdiği 4 haneli kodu gir.</p>
+      <input class="codebox" id="i-code" type="text" inputmode="text" maxlength="4" placeholder="A B C D" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
+      <button class="btn btn-primary" id="b-join">Katıl</button>
+    </div>
+
+    <button class="btn btn-ghost" data-back="s-menu">← Geri</button>
+  </div>
+</section>
+
+<!-- ============ LOBİ ============ -->
+<section class="screen hidden" id="s-lobby">
+  <div class="stack">
+    <h2 class="title">Oda Kodu</h2>
+    <div class="bigcode" id="lobby-code">----</div>
+    <div class="btns btns-row">
+      <button class="btn btn-sm" id="b-copy">Kodu Kopyala</button>
+      <button class="btn btn-sm" id="b-share">Paylaş</button>
+    </div>
+
+    <div class="players">
+      <div class="pslot is-me"><i></i><b id="p-a">Oyuncu 1</b><small>Sen</small></div>
+      <span class="vs">VS</span>
+      <div class="pslot" id="slot-b"><i></i><b id="p-b">Bekleniyor…</b><small id="p-b-sub">Kodu paylaş</small></div>
+    </div>
+
+    <div class="scorepick" id="pick-lobby">
+      <span class="scorepick-label">Kaç golde biter?</span>
+      <div class="chips">
+        <button class="chip" data-v="5">5</button>
+        <button class="chip" data-v="6">6</button>
+        <button class="chip is-on" data-v="7">7</button>
+        <button class="chip" data-v="8">8</button>
+        <input class="chip chip-input" id="t-lobby" type="number" inputmode="numeric" min="1" max="15" placeholder="…">
+      </div>
+      <p class="hint" id="lobby-hostnote">Skoru sen belirliyorsun. Rakip katılınca oyun başlar.</p>
+    </div>
+
+    <button class="btn btn-ghost" id="b-lobby-leave">← Odadan Çık</button>
+  </div>
+</section>
+
+<!-- ============ YEREL KURULUM ============ -->
+<section class="screen hidden" id="s-local">
+  <div class="stack">
+    <h2 class="title">Aynı Telefonda 2 Kişi</h2>
+    <p class="tagline">Telefonu aranıza koyun.<br><b class="c-me">Alt yarı</b> bir oyuncunun, <b class="c-foe">üst yarı</b> diğerinin.</p>
+    <div class="scorepick" id="pick-local">
+      <span class="scorepick-label">Kaç golde biter?</span>
+      <div class="chips">
+        <button class="chip" data-v="5">5</button>
+        <button class="chip" data-v="6">6</button>
+        <button class="chip is-on" data-v="7">7</button>
+        <button class="chip" data-v="8">8</button>
+        <input class="chip chip-input" id="t-local" type="number" inputmode="numeric" min="1" max="15" placeholder="…">
+      </div>
+    </div>
+    <button class="btn btn-primary" id="b-local-start">Başlat</button>
+    <button class="btn btn-ghost" data-back="s-menu">← Geri</button>
+  </div>
+</section>
+
+<!-- ============ OYUN ============ -->
+<section class="screen screen-game hidden" id="s-game">
+  <canvas id="cv"></canvas>
+
+  <div class="hud">
+    <div class="hud-top">
+      <div class="hud-name" id="hud-foe">Rakip</div>
+      <div class="hud-score" id="sc-foe">0</div>
+    </div>
+    <div class="hud-mid">
+      <div class="hud-target"><span id="hud-target">7</span> GOL</div>
+      <div class="hud-net"><span id="hud-ping">—</span></div>
+    </div>
+    <div class="hud-bot">
+      <div class="hud-score" id="sc-me">0</div>
+      <div class="hud-name" id="hud-me">Sen</div>
+    </div>
+    <button class="hud-exit" id="b-exit" aria-label="Çık">✕</button>
+  </div>
+
+  <div class="center-msg hidden" id="cmsg"><span id="cmsg-txt"></span></div>
+
+  <div class="overlay hidden" id="ovl">
+    <div class="ovl-card">
+      <div class="ovl-title" id="ovl-title">Maç Bitti</div>
+      <div class="ovl-score" id="ovl-score">0 – 0</div>
+      <p class="ovl-sub" id="ovl-sub"></p>
+      <button class="btn btn-primary" id="b-again">Tekrar Oyna</button>
+      <button class="btn btn-ghost" id="b-menu">Ana Menü</button>
+    </div>
+  </div>
+</section>
+
+<div class="toast hidden" id="toast"></div>
+
+<script src="engine.js"></script>
+<script src="sound.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
