@@ -13,6 +13,8 @@ final class World {
     var me   = Vec(x: Field.W / 2, y: Field.H * 0.78)
     var foe  = Vec(x: Field.W / 2, y: Field.H * 0.22)
     var trail: [Vec] = []
+    /// The motion beam is tinted by the mallet that last struck the puck.
+    var trailTint: Color?
     var shake: Double = 0
 
     /// My paddle, simulated locally so my own finger never feels laggy.
@@ -27,6 +29,7 @@ final class World {
         myPad = Paddle(x: Field.W / 2, y: Field.H * 0.78)
         foePad = Paddle(x: Field.W / 2, y: Field.H * 0.22)
         trail.removeAll(keepingCapacity: true)
+        trailTint = nil
         shake = 0
     }
 }
@@ -53,6 +56,12 @@ final class GameModel: ObservableObject, NetDelegate {
     @Published var centerText = ""
     @Published var centerIsGoal = false
     @Published var showOverlay = false
+    /// Second half: the phone has been turned around on the table.
+    @Published var flip = false
+    @Published var showHalftime = false
+    @Published var halfAt = 0
+    /// Mallet radius the match in progress is actually using.
+    @Published var padR = Prefs.shared.padR
     @Published var overlayWin = true
     @Published var overlayTitle = ""
 
@@ -115,7 +124,7 @@ final class GameModel: ObservableObject, NetDelegate {
             return
         }
         lastState = .lobby
-        net.create(target: pendingTarget)
+        net.create(target: pendingTarget, pad: Prefs.shared.padR)
     }
 
     func joinRoom() {
@@ -168,12 +177,16 @@ final class GameModel: ObservableObject, NetDelegate {
         Sound.shared.ui()
         mode = .local
         target = localTarget
-        let e = Engine(target: localTarget)
+        padR = Prefs.shared.padR
+        let e = Engine(target: localTarget, padR: padR, halftime: true)
         e.startCountdown()
         engine = e
+        halfAt = e.halfAt
         scoreMe = 0; scoreFoe = 0
         lastCountdown = -1
         lastState = .lobby
+        flip = false
+        showHalftime = false
         world.reset()
         showOverlay = false
         screen = .game
@@ -181,6 +194,8 @@ final class GameModel: ObservableObject, NetDelegate {
     }
 
     func enterGame() {
+        flip = false
+        showHalftime = false
         world.reset()
         lastSentX = -1; lastSentY = -1
         lastCountdown = -1
@@ -197,6 +212,8 @@ final class GameModel: ObservableObject, NetDelegate {
         engine = nil
         snap = nil
         showOverlay = false
+        showHalftime = false
+        flip = false
         centerText = ""
         screen = .menu
     }
@@ -207,9 +224,29 @@ final class GameModel: ObservableObject, NetDelegate {
         if mode == .local {
             engine?.restart()
             lastCountdown = -1
+            flip = false
+            showHalftime = false
         } else {
             net.restart()
         }
+    }
+
+    /// The players say they have turned the phone; swing the rink and the HUD
+    /// round to match and start the second half.
+    func continueHalftime() {
+        Sound.shared.ui()
+        showHalftime = false
+        lastCountdown = -1
+        engine?.resumeHalftime()
+    }
+
+    private func enterHalftime(_ g: Engine) {
+        Sound.shared.half()
+        centerText = ""
+        showHalftime = true
+        withAnimation(.easeInOut(duration: 0.45)) { flip.toggle() }
+        world.myPad = Paddle(x: Field.W / 2, y: Field.H * 0.78)
+        world.foePad = Paddle(x: Field.W / 2, y: Field.H * 0.22)
     }
 
     func flash(_ msg: String) {
@@ -291,7 +328,8 @@ final class GameModel: ObservableObject, NetDelegate {
             switch e.type {
             case 0:
                 Sound.shared.hit(e.intensity)
-                world.shake = min(1, e.intensity / Field.puckMax) * 0.5
+                world.shake = min(1, e.intensity / Field.puckMax) * 0.6
+                world.trailTint = e.y >= Field.H / 2 ? T.me : T.foe
             case 1:
                 Sound.shared.wall(e.intensity)
             default:
@@ -303,7 +341,9 @@ final class GameModel: ObservableObject, NetDelegate {
         }
         g.clearEvents()
 
-        if g.state == .countdown {
+        if g.state == .halftime && prev != .halftime {
+            enterHalftime(g)
+        } else if g.state == .countdown {
             let n = Int(ceil(g.countdown / 1000))
             if n != lastCountdown && n > 0 {
                 lastCountdown = n
@@ -332,15 +372,19 @@ final class GameModel: ObservableObject, NetDelegate {
 
     // MARK: - input from the touch layer
 
+    /// The mallet sits a little way *up-field* of the fingertip, so the finger
+    /// never parks on top of the thing you are trying to aim with.
     func touchMine(x: Double, y: Double) {
-        world.myPad.tx = clampd(x, Field.padR, Field.W - Field.padR)
-        world.myPad.ty = clampd(y, Field.H / 2 + Field.padR, Field.H - Field.padR)
+        let r = padR, lead = Prefs.shared.lead
+        world.myPad.tx = clampd(x, r, Field.W - r)
+        world.myPad.ty = clampd(y - lead, Field.H / 2 + r, Field.H - r)
     }
 
     func touchTheirs(x: Double, y: Double) {
         guard mode == .local else { return }
-        world.foePad.tx = clampd(x, Field.padR, Field.W - Field.padR)
-        world.foePad.ty = clampd(y, Field.padR, Field.H / 2 - Field.padR)
+        let r = padR, lead = Prefs.shared.lead
+        world.foePad.tx = clampd(x, r, Field.W - r)
+        world.foePad.ty = clampd(y + lead, r, Field.H / 2 - r)
     }
 
     // MARK: - NetDelegate
@@ -355,20 +399,23 @@ final class GameModel: ObservableObject, NetDelegate {
         }
     }
 
-    nonisolated func netJoined(code: String, side: String, target: Int) {
+    nonisolated func netJoined(code: String, side: String, target: Int, pad: Double) {
         Task { @MainActor in
             self.mode = .online
             self.code = code
             self.mySide = side
             self.target = target
+            if pad > 0 { self.padR = pad }
+            self.halfAt = 0            // online matches never break for half time
             self.lastState = .lobby
             if self.screen != .game { self.screen = .lobby }
         }
     }
 
-    nonisolated func netRoom(target: Int, myName: String, foeName: String, foePresent: Bool) {
+    nonisolated func netRoom(target: Int, pad: Double, myName: String, foeName: String, foePresent: Bool) {
         Task { @MainActor in
             self.target = target
+            if pad > 0 { self.padR = pad }
             self.myName = myName
             self.foeName = foeName
             self.foePresent = foePresent
@@ -409,7 +456,8 @@ final class GameModel: ObservableObject, NetDelegate {
             switch e.type {
             case 0:
                 Sound.shared.hit(e.intensity)
-                world.shake = min(1, e.intensity / Field.puckMax) * 0.5
+                world.shake = min(1, e.intensity / Field.puckMax) * 0.6
+                world.trailTint = e.y >= Field.H / 2 ? T.me : T.foe
             case 1:
                 Sound.shared.wall(e.intensity)
             default:

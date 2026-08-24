@@ -30,12 +30,12 @@ function newCode() {
   return null;
 }
 
-function createRoom(target) {
+function createRoom(target, padR) {
   const code = newCode();
   if (!code) return null;
   const room = {
     code,
-    game: new Game(target),
+    game: new Game({ target, padR }),
     seats: { a: null, b: null },
     names: { a: 'Oyuncu 1', b: 'Oyuncu 2' },
     emptySince: Date.now(),
@@ -65,6 +65,7 @@ function roomInfo(room) {
     t: 'room',
     code: room.code,
     target: room.game.target,
+    pad: room.game.padR,
     names: room.names,
     a: !!room.seats.a,
     b: !!room.seats.b,
@@ -121,9 +122,13 @@ const httpServer = http.createServer((req, res) => {
       res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
       return res.end('Bulunamadi');
     }
+    // The page, its script and its stylesheet must never outlive a deploy -
+    // a stale app.js against a fresh engine.js is a very confusing bug.
+    const ext = path.extname(file);
+    const versioned = ext === '.html' || ext === '.js' || ext === '.css' || ext === '.webmanifest';
     res.writeHead(200, {
-      'content-type': MIME[path.extname(file)] || 'application/octet-stream',
-      'cache-control': path.extname(file) === '.html' ? 'no-cache' : 'public, max-age=3600',
+      'content-type': MIME[ext] || 'application/octet-stream',
+      'cache-control': versioned ? 'no-cache' : 'public, max-age=86400',
     });
     res.end(data);
   });
@@ -162,7 +167,9 @@ wss.on('connection', (ws) => {
       case 'create': {
         leaveRoom(ws);
         const target = Math.min(15, Math.max(1, parseInt(m.target, 10) || 7));
-        const room = createRoom(target);
+        // The host's mallet-size preference becomes the room's; the engine
+        // clamps it, and both clients are told what it ended up as.
+        const room = createRoom(target, parseFloat(m.pad));
         if (!room) return send(ws, { t: 'err', m: 'Oda olusturulamadi, tekrar dene.' });
         room.seats.a = ws;
         if (typeof m.name === 'string' && m.name.trim()) {
@@ -170,7 +177,7 @@ wss.on('connection', (ws) => {
         }
         ws.room = room;
         ws.side = 'a';
-        send(ws, { t: 'joined', code: room.code, side: 'a', target: room.game.target });
+        send(ws, { t: 'joined', code: room.code, side: 'a', target: room.game.target, pad: room.game.padR });
         broadcast(room, roomInfo(room));
         break;
       }
@@ -192,7 +199,7 @@ wss.on('connection', (ws) => {
         }
         ws.room = room;
         ws.side = side;
-        send(ws, { t: 'joined', code: room.code, side, target: room.game.target });
+        send(ws, { t: 'joined', code: room.code, side, target: room.game.target, pad: room.game.padR });
         broadcast(room, roomInfo(room));
         broadcast(room, { t: 'peer', on: true });
 
@@ -208,7 +215,7 @@ wss.on('connection', (ws) => {
         const room = ws.room;
         if (!room || ws.side !== 'a') return;
         if (room.game.state !== ST.LOBBY && room.game.state !== ST.OVER) return;
-        room.game.target = Math.min(15, Math.max(1, parseInt(m.v, 10) || 7));
+        room.game.setTarget(m.v);
         broadcast(room, roomInfo(room));
         break;
       }
