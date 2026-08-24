@@ -8,9 +8,12 @@ primary_region = "fra"   # Frankfurt — düşük ping için Türkiye'ye en yak�
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "suspend"
+  # Bir oyun sunucusu uyumamali: uykudan kalkan makine ilk saniyelerde hem
+  # gec cevap verir hem de fizik dongusunu takilarak calistirir - iki oyuncu
+  # da bunu "lag" olarak gorur. Bu ayar makineyi surekli acik tutar (ucretli).
+  auto_stop_machines = "off"
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
 
 [[http_service.checks]]
   interval = "30s"
