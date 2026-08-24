@@ -49,7 +49,7 @@ final class Net: NSObject {
         get { UserDefaults.standard.string(forKey: "ah_server") ?? Net.defaultServer }
         set { UserDefaults.standard.set(newValue, forKey: "ah_server") }
     }
-    static let defaultServer = "http://localhost:8080"
+    static let defaultServer = "https://air-hockey-qa5w.onrender.com"
 
     override init() {
         super.init()

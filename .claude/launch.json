@@ -4,8 +4,11 @@
     {
       "name": "hockey",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["server/server.js"],
-      "port": 8080
+      "runtimeArgs": [
+        "server/server.js"
+      ],
+      "port": 8080,
+      "autoPort": true
     }
   ]
 }

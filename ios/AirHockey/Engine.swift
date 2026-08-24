@@ -13,13 +13,16 @@ enum Field {
     static let gx1: Double = (W + goalW) / 2
     static let postR: Double = 1.5
 
-    static let puckMax: Double = 190
-    static let puckMinAfterHit: Double = 34
-    static let padMaxSpeed: Double = 320
+    static let puckMax: Double = 340          // a smash crosses the rink in ~0.6 s
+    static let puckMinAfterHit: Double = 40
+    static let padMaxSpeed: Double = 420
     static let friction: Double = 0.94
     static let wallRest: Double = 0.93
-    static let padRest: Double = 0.94
-    static let padTransfer: Double = 0.60
+    static let padRest: Double = 0.96         // restitution of a *passive* mallet
+    static let smashRef: Double = 190         // mallet speed where the bonus tops out
+    static let smashBonus: Double = 0.62      // extra restitution on a full-force strike
+    static let padTransfer: Double = 0.30     // mallet speed injected along the normal
+    static let padDrag: Double = 0.16         // ...and sideways, so a brush curls the puck
 
     static let countdownStart: Double = 3000
     static let countdownGoal: Double = 1600
@@ -142,7 +145,7 @@ final class Engine {
 
     private func movePuck(_ dt: Double) {
         let speed = (puckV.x * puckV.x + puckV.y * puckV.y).squareRoot()
-        let steps = Int(clampd((speed * dt / (Field.puckR * 0.7)).rounded(.up), 1, 8))
+        let steps = Int(clampd((speed * dt / (Field.puckR * 0.7)).rounded(.up), 1, 12))
         let sdt = dt / Double(steps)
 
         for _ in 0..<steps {
@@ -233,16 +236,24 @@ final class Engine {
         puck.x = p.x + nx * (minD + 0.05)
         puck.y = p.y + ny * (minD + 0.05)
 
+        // How hard the mallet is driving *into* the puck along the contact normal.
+        // Only a real swing earns the bonus - parking the mallet in front of a
+        // fast puck must stay a block, not a free rocket.
+        let swing = max(0, p.vx * nx + p.vy * ny)
+        let punch = clampd(swing / Field.smashRef, 0, 1)
+
         let rvx = puckV.x - p.vx, rvy = puckV.y - p.vy
         let vn = rvx * nx + rvy * ny
         if vn < 0 {
-            puckV.x -= nx * vn * (1 + Field.padRest)
-            puckV.y -= ny * vn * (1 + Field.padRest)
+            let rest = Field.padRest + Field.smashBonus * punch
+            puckV.x -= nx * vn * (1 + rest)
+            puckV.y -= ny * vn * (1 + rest)
         }
 
-        // Inject the paddle's own motion - this is what makes a smash feel like a smash
-        puckV.x += p.vx * Field.padTransfer
-        puckV.y += p.vy * Field.padTransfer
+        // Inject the paddle's own motion - this is what makes a smash feel like a
+        // smash. Straight-on drive counts far more than a sideways brush.
+        puckV.x += nx * swing * Field.padTransfer + (p.vx - nx * swing) * Field.padDrag
+        puckV.y += ny * swing * Field.padTransfer + (p.vy - ny * swing) * Field.padDrag
 
         var sp = (puckV.x * puckV.x + puckV.y * puckV.y).squareRoot()
         if sp < Field.puckMinAfterHit {

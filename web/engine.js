@@ -14,30 +14,41 @@ const W = 100;
 const H = 200;
 
 const PUCK_R = 3.4;
-const PAD_R = 5.6;
+const PAD_R = 5.6;              // default mallet radius; per-game overridable
+const PAD_R_MIN = 3.4;
+const PAD_R_MAX = 8.2;
 
 const GOAL_W = 34;
 const GX0 = (W - GOAL_W) / 2;   // 33
 const GX1 = (W + GOAL_W) / 2;   // 67
 const POST_R = 1.5;
 
-const PUCK_MAX = 190;
-const PUCK_MIN_AFTER_HIT = 34;
-const PAD_MAX_SPEED = 320;      // clamp so a teleporting finger can't break physics
+const PUCK_MAX = 340;           // a smash crosses the rink in ~0.6 s
+const PUCK_MIN_AFTER_HIT = 40;
+const PAD_MAX_SPEED = 420;      // clamp so a teleporting finger can't break physics
 const FRICTION = 0.94;          // multiplicative per second
 const WALL_REST = 0.93;
-const PAD_REST = 0.94;
-const PAD_TRANSFER = 0.60;      // how much paddle velocity is injected into the puck
+const PAD_REST = 0.96;          // restitution of a *passive* mallet (a block)
+const SMASH_REF = 190;          // mallet speed at which the strike bonus tops out
+const SMASH_BONUS = 0.62;       // extra restitution on a full-force strike
+const PAD_TRANSFER = 0.30;      // mallet speed injected along the contact normal
+const PAD_DRAG = 0.16;          // ...and sideways, so a brushed puck curls away
 
 const TICK = 1 / 60;
 const COUNTDOWN_START = 3000;
 const COUNTDOWN_GOAL = 1600;
 const STALL_LIMIT = 5000;       // ms of a near-motionless puck before we nudge it
 
-const ST = { LOBBY: 0, COUNTDOWN: 1, PLAYING: 2, PAUSED: 3, OVER: 4 };
+const ST = { LOBBY: 0, COUNTDOWN: 1, PLAYING: 2, PAUSED: 3, OVER: 4, HALFTIME: 5 };
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const r2 = (v) => Math.round(v * 100) / 100;
+
+/* Half time lands when the leader reaches half the winning score. Short
+   matches (1-2 goals) are over before a break would make any sense. */
+function halftimeFor(target) {
+  return target >= 3 ? Math.ceil(target / 2) : 0;
+}
 
 function makePaddle(side) {
   // A sits in the bottom half, B in the top half.
@@ -46,8 +57,14 @@ function makePaddle(side) {
 }
 
 class Game {
-  constructor(target = 7) {
-    this.target = target;
+  /* `opts` may be a plain target score (legacy) or
+     { target, padR, halftime }. */
+  constructor(opts = 7) {
+    const o = (typeof opts === 'number' || opts == null) ? { target: opts } : opts;
+    this.target = clamp(Math.round(+o.target || 7), 1, 15);
+    this.padR = clamp(+o.padR || PAD_R, PAD_R_MIN, PAD_R_MAX);
+    this.halfAt = o.halftime ? halftimeFor(this.target) : 0;
+    this.halfDone = false;
     this.scoreA = 0;
     this.scoreB = 0;
     this.state = ST.LOBBY;
@@ -60,6 +77,12 @@ class Game {
     this.padB = makePaddle('b');
     this.puck = { x: W / 2, y: H / 2, vx: 0, vy: 0 };
     this.resetPuck(Math.random() < 0.5 ? 1 : -1);
+  }
+
+  /* Changing the winning score also moves the break. */
+  setTarget(v) {
+    this.target = clamp(Math.round(+v) || 7, 1, 15);
+    if (this.halfAt) this.halfAt = halftimeFor(this.target);
   }
 
   resetPuck(dir) {
@@ -93,10 +116,16 @@ class Game {
     if (this.state === ST.PAUSED) this.startCountdown(COUNTDOWN_START);
   }
 
+  /* Players have turned the phone around; kick the second half off. */
+  resumeHalftime() {
+    if (this.state === ST.HALFTIME) this.startCountdown(COUNTDOWN_START);
+  }
+
   restart() {
     this.scoreA = 0;
     this.scoreB = 0;
     this.winner = null;
+    this.halfDone = false;
     this.resetPaddles();
     this.resetPuck(Math.random() < 0.5 ? 1 : -1);
     this.startCountdown(COUNTDOWN_START);
@@ -105,10 +134,11 @@ class Game {
   /* Target position from a client, already in canonical field coordinates. */
   setInput(side, x, y) {
     const p = side === 'a' ? this.padA : this.padB;
-    p.tx = clamp(x, PAD_R, W - PAD_R);
+    const r = this.padR;
+    p.tx = clamp(x, r, W - r);
     p.ty = side === 'a'
-      ? clamp(y, H / 2 + PAD_R, H - PAD_R)
-      : clamp(y, PAD_R, H / 2 - PAD_R);
+      ? clamp(y, H / 2 + r, H - r)
+      : clamp(y, r, H / 2 - r);
   }
 
   ev(type, x, y, i) {
@@ -160,7 +190,7 @@ class Game {
 
     // Sub-step so a fast puck can never tunnel through a paddle or wall.
     const speed = Math.hypot(k.vx, k.vy);
-    const steps = clamp(Math.ceil((speed * dt) / (PUCK_R * 0.7)), 1, 8);
+    const steps = clamp(Math.ceil((speed * dt) / (PUCK_R * 0.7)), 1, 12);
     const sdt = dt / steps;
 
     for (let s = 0; s < steps; s++) {
@@ -251,7 +281,7 @@ class Game {
     const dx = k.x - p.x;
     const dy = k.y - p.y;
     let dist = Math.hypot(dx, dy);
-    const min = PUCK_R + PAD_R;
+    const min = PUCK_R + this.padR;
     if (dist >= min) return;
     if (dist === 0) { dist = 0.0001; }
 
@@ -262,18 +292,26 @@ class Game {
     k.x = p.x + nx * (min + 0.05);
     k.y = p.y + ny * (min + 0.05);
 
+    // How hard the mallet is driving *into* the puck along the contact normal.
+    // Only a real swing earns the bonus - parking the mallet in front of a
+    // fast puck must stay a block, not a free rocket.
+    const swing = Math.max(0, p.vx * nx + p.vy * ny);
+    const punch = clamp(swing / SMASH_REF, 0, 1);
+
     // Reflect the puck's velocity relative to the moving paddle
     const rvx = k.vx - p.vx;
     const rvy = k.vy - p.vy;
     const vn = rvx * nx + rvy * ny;
     if (vn < 0) {
-      k.vx -= nx * vn * (1 + PAD_REST);
-      k.vy -= ny * vn * (1 + PAD_REST);
+      const rest = PAD_REST + SMASH_BONUS * punch;
+      k.vx -= nx * vn * (1 + rest);
+      k.vy -= ny * vn * (1 + rest);
     }
 
-    // Inject the paddle's own motion - this is what makes a smash feel like a smash
-    k.vx += p.vx * PAD_TRANSFER;
-    k.vy += p.vy * PAD_TRANSFER;
+    // Inject the paddle's own motion - this is what makes a smash feel like a
+    // smash. Straight-on drive counts far more than a sideways brush.
+    k.vx += nx * swing * PAD_TRANSFER + (p.vx - nx * swing) * PAD_DRAG;
+    k.vy += ny * swing * PAD_TRANSFER + (p.vy - ny * swing) * PAD_DRAG;
 
     // Never let a hit die on contact
     let sp = Math.hypot(k.vx, k.vy);
@@ -305,8 +343,18 @@ class Game {
       this.puck.vx = 0; this.puck.vy = 0;
       return;
     }
+
     // Conceding side gets the puck: A defends y=H, B defends y=0.
     this.resetPuck(side === 'a' ? -1 : 1);
+
+    // Half time: freeze here until the players say they have turned the phone.
+    if (this.halfAt && !this.halfDone &&
+        Math.max(this.scoreA, this.scoreB) >= this.halfAt) {
+      this.halfDone = true;
+      this.state = ST.HALFTIME;
+      return;
+    }
+
     this.startCountdown(COUNTDOWN_GOAL);
   }
 
@@ -347,7 +395,11 @@ class Game {
 }
 
 return {
-  Game, ST,
-  CONST: { W, H, PUCK_R, PAD_R, GOAL_W, GX0, GX1, POST_R, TICK },
+  Game, ST, halftimeFor,
+  CONST: {
+    W, H, PUCK_R, PAD_R, PAD_R_MIN, PAD_R_MAX,
+    GOAL_W, GX0, GX1, POST_R, TICK,
+    PUCK_MAX, PAD_MAX_SPEED,
+  },
 };
 }));

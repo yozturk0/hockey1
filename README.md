@@ -103,8 +103,28 @@ gönderir (Paylaş düğmesi hazır bir davet metni üretir). Diğeri kodu girip
 **Aynı telefonda 2 kişi:** Telefonu masaya koyun. Alt yarı bir oyuncunun, üst yarı diğerinin.
 Aynı anda iki parmak çalışır.
 
-**Bitiş skoru:** Maç başlamadan önce **5 / 7 / 9 / 11** seçebilir ya da kutuya
+**Bitiş skoru:** Maç başlamadan önce **5 / 6 / 7 / 8** seçebilir ya da kutuya
 istediğin sayıyı (1–15) yazabilirsin. Online oyunda skoru oda sahibi belirler.
+Seçtiğin skorun altında *"4 golde devre → 7 golde biter"* satırı, maçın nasıl
+ilerleyeceğini önceden gösterir.
+
+**Devre:** Aynı telefondaki maçlarda, önde giden oyuncu bitiş skorunun yarısına
+(`ceil(hedef / 2)`) ulaştığında maç durur ve **telefonu 180° çevirin** ekranı gelir.
+Uyarı ekranın iki ucuna da basılır, böylece karşılıklı oturan iki oyuncu da düz okur.
+*Çevirdik, Devam* denince saha da, skor tablosu da yarım tur döner: alt yarı yukarı,
+üst yarı aşağı geçer. Böylece ekranın bir yanındaki dokunmatik farkları maçın
+tamamını etkilemez — herkes iki tarafı da oynar. Devre bir maçta bir kez olur.
+
+**Ayarlar (⚙️):**
+
+| Ayar | Ne işe yarar |
+|---|---|
+| **Zemin** | Krem · Buz · Çim · Gece. İlk üçü açık ve sade — çocuklar için daha rahat okunur. Gece, eski neon görünüm. |
+| **Sopa boyutu** | Mini / Küçük / Orta / Büyük. Parmağın sopayı tamamen kapatıyorsa küçült. Online oyunda odayı kuranın seçimi iki oyuncu için de geçerlidir. |
+| **Parmak boşluğu** | Sopa, parmağının biraz ilerisinde durur; parmağın altında kaybolmaz. Kapalı / Az / Orta / Çok. |
+
+Ayarlardaki önizlemede parmağını sürükleyerek dene: kesikli daire parmağının
+gerçek temas alanını gösterir.
 
 Rakip bağlantısı koparsa maç duraklar, skorlar korunur ve aynı kodla geri dönebilir.
 
@@ -126,8 +146,16 @@ saniyede 60 kez durum anlık görüntüsü alır.
 - **iOS ve web aynı fiziği paylaşır:** `web/engine.js` ile `ios/AirHockey/Engine.swift`
   birebir aynı davranışa sahiptir (aynı telefonda 2 kişi modu için).
 
-Sopa hızının topa aktarılması (`PAD_TRANSFER`), sekme katsayıları ve sürtünme
-`web/engine.js` dosyasının en üstündeki sabitlerden ayarlanabilir.
+**Vuruş sertliği:** Topun tepe hızı `PUCK_MAX`, sopanın *pasif* sekme katsayısı
+`PAD_REST`. Sopa topun içine doğru sürüldüğünde sekme katsayısı `SMASH_BONUS` kadar
+artar (`SMASH_REF` hızında tavana vurur) — yani sert bir vuruş gerçekten patlar,
+ama topun önüne park edilen sopa hâlâ sadece blok yapar, enerji üretmez.
+Sopa hızının topa aktarımı normal boyunca `PAD_TRANSFER`, teğet boyunca `PAD_DRAG`.
+Hepsi `web/engine.js` dosyasının en üstündeki sabitlerden ayarlanabilir ve
+`ios/AirHockey/Engine.swift` içindeki `Field` ile birebir aynı tutulmalıdır.
+
+Sopa yarıçapı artık maça özeldir (`new Game({ target, padR, halftime })`); sunucu
+oda kurulurken oda sahibinden alır ve iki istemciye de bildirir.
 
 ---
 

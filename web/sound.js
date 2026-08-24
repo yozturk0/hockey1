@@ -88,9 +88,9 @@
     get on() { return enabled; },
     set on(v) { enabled = !!v; },
 
-    /* Puck meets paddle. speed is in field units/sec (0..190). */
+    /* Puck meets paddle. speed is in field units/sec (0..PUCK_MAX). */
     hit(speed) {
-      const t = clamp01((speed || 60) / 190);
+      const t = clamp01((speed || 60) / 340);
       const base = 300 + t * 480;
       tone({ type: 'triangle', f0: base * 1.9, f1: base * 0.72, dur: 0.085 + t * 0.05, gain: 0.20 + t * 0.20 });
       tone({ type: 'sine', f0: base * 0.55, f1: base * 0.3, dur: 0.12, gain: 0.13 + t * 0.12, cutoff: 1400 });
@@ -100,7 +100,7 @@
 
     /* Puck meets a wall or a goalpost — duller, quieter. */
     wall(speed) {
-      const t = clamp01((speed || 40) / 190);
+      const t = clamp01((speed || 40) / 340);
       if (t < 0.06) return;
       tone({ type: 'sine', f0: 190 + t * 150, f1: 90, dur: 0.075, gain: 0.09 + t * 0.11, cutoff: 900 });
       noise({ freq: 700 + t * 800, q: 1.6, dur: 0.03, gain: 0.045 + t * 0.07 });
@@ -114,6 +114,15 @@
         tone({ type: 'sine', f0: f / 2, f1: f / 2, dur: 0.24, gain: 0.11, delay: i * 0.075 });
       });
       noise({ freq: 2600, q: 0.6, dur: 0.16, gain: 0.09 });
+    },
+
+    /* Half-time whistle — two short blasts, unmistakably "stop and turn". */
+    half() {
+      buzz([40, 90, 40, 90, 160]);
+      [0, 0.24].forEach((d) => {
+        tone({ type: 'square', f0: 1180, f1: 1240, dur: 0.2, gain: 0.11, cutoff: 3000, delay: d });
+        tone({ type: 'sine', f0: 1760, f1: 1820, dur: 0.2, gain: 0.07, delay: d });
+      });
     },
 
     count(n) {
