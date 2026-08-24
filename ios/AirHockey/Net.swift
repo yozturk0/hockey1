@@ -10,6 +10,9 @@ struct Snapshot {
     var puckV = Vec(x: 0, y: 0)
     var me = Vec(x: Field.W / 2, y: Field.H * 0.78)
     var foe = Vec(x: Field.W / 2, y: Field.H * 0.22)
+    /// The opponent's mallet velocity, so the client can carry it forward over
+    /// the trip time instead of drawing it where it was a ping ago.
+    var foeV = Vec(x: 0, y: 0)
     /// Live mallet radii — in lucky mode they change mid-rally.
     var rMe = Field.padR
     var rFoe = Field.padR
@@ -39,7 +42,6 @@ protocol NetDelegate: AnyObject {
 
 final class Net: NSObject {
     weak var delegate: NetDelegate?
-
     private var task: URLSessionWebSocketTask?
     private var session: URLSession!
     private var pingTimer: Timer?
@@ -244,6 +246,7 @@ final class Net: NSObject {
         }
         if let m = o["m"] as? [Double], m.count >= 2 { s.me = Vec(x: m[0], y: m[1]) }
         if let f = o["o"] as? [Double], f.count >= 2 { s.foe = Vec(x: f[0], y: f[1]) }
+        if let v = o["ov"] as? [Double], v.count >= 2 { s.foeV = Vec(x: v[0], y: v[1]) }
         if let r = o["rm"] as? Double, r > 0 { s.rMe = r }
         if let r = o["ro"] as? Double, r > 0 { s.rFoe = r }
         s.scoreMe = o["sm"] as? Int ?? 0

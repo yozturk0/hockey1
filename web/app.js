@@ -879,23 +879,51 @@ function stepOnline(dt) {
 
   if (!s) return;
 
-  // Extrapolate the puck over the packet's age, then smooth out jitter.
-  const age = Math.min((performance.now() - App.snapAt) / 1000, 0.14);
+  /* A snapshot describes the rink as it was one trip-time ago, so it is carried
+     forward over that trip *plus* the packet's own age. Drawing it raw puts the
+     puck a whole ping behind the mallet you are swinging at it - which is
+     exactly what "the mallet went straight through the puck" looks like. */
+  const lead = App.ping == null ? 0 : Math.min(App.ping, 240) / 2000;
+  const age = Math.min((performance.now() - App.snapAt) / 1000 + lead, 0.22);
   const live = s.st === ST.PLAYING;
   const tpx = clamp(s.p[0] + (live ? s.p[2] * age : 0), -6, W + 6);
   const tpy = clamp(s.p[1] + (live ? s.p[3] * age : 0), -6, H + 6);
 
+  // The opponent's mallet gets the same treatment, so their strike lands on
+  // screen at the moment the puck leaves rather than a ping later.
+  const ov = s.ov || [0, 0];
+  const tox = clamp(s.o[0] + (live ? ov[0] * age : 0), 0, W);
+  const toy = clamp(s.o[1] + (live ? ov[1] * age : 0), 0, H / 2);
+
   const a = 1 - Math.exp(-42 * dt);
   R.puck.x += (tpx - R.puck.x) * a;
   R.puck.y += (tpy - R.puck.y) * a;
-  R.foe.x += (s.o[0] - R.foe.x) * a;
-  R.foe.y += (s.o[1] - R.foe.y) * a;
+  R.foe.x += (tox - R.foe.x) * a;
+  R.foe.y += (toy - R.foe.y) * a;
 
   // Gently reconcile my paddle with the server's authoritative copy.
   const b = 1 - Math.exp(-6 * dt);
   myPad.x += (s.m[0] - myPad.x) * b;
   myPad.y += (s.m[1] - myPad.y) * b;
   R.me.x = myPad.x; R.me.y = myPad.y;
+
+  // Whatever the numbers say, a solid mallet must never be drawn sitting on
+  // top of the puck. If the two overlap on screen, the puck is nudged clear -
+  // the next snapshot corrects it, and the contact reads as a contact.
+  if (live) { pushPuckOut(R.me, App.rMe); pushPuckOut(R.foe, App.rFoe); }
+}
+
+/* Cosmetic separation only: no velocity is invented here. */
+function pushPuckOut(pad, r) {
+  const dx = R.puck.x - pad.x;
+  const dy = R.puck.y - pad.y;
+  const min = PUCK_R + r;
+  const d = Math.hypot(dx, dy);
+  if (d >= min) return;
+  const nx = d === 0 ? 0 : dx / d;
+  const ny = d === 0 ? -1 : dy / d;
+  R.puck.x = pad.x + nx * min;
+  R.puck.y = pad.y + ny * min;
 }
 
 function stepLocal(dt) {

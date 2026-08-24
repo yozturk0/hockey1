@@ -221,9 +221,7 @@ class Game {
     if (this.state !== ST.PLAYING) return;
 
     if (this.mode === MODE_LUCKY) this.luckyStep(dt);
-    this.movePaddle(this.padA, dt);
-    this.movePaddle(this.padB, dt);
-    this.movePuck(dt);
+    this.advance(dt);
   }
 
   holdPaddle(p) {
@@ -233,7 +231,13 @@ class Game {
     p.vy = 0;
   }
 
-  movePaddle(p, dt) {
+  /* Where a mallet wants to be at the end of this frame, and how fast it is
+     travelling to get there. It is deliberately NOT moved here: the mallet is
+     carried across the sub-steps together with the puck, because a mallet that
+     teleports a whole frame's worth of distance jumps clean over any puck that
+     happened to be in the gap - which is exactly what "the mallet went through
+     the puck" looks like. */
+  padStep(p, dt) {
     const dx = p.tx - p.x;
     const dy = p.ty - p.y;
     const d = Math.hypot(dx, dy);
@@ -247,8 +251,33 @@ class Game {
     }
     p.vx = (nx - p.x) / dt;
     p.vy = (ny - p.y) / dt;
-    p.x = nx;
-    p.y = ny;
+    return { x0: p.x, y0: p.y, x1: nx, y1: ny };
+  }
+
+  /* One frame of the live rink: both mallets and the puck move along the same
+     sub-divided timeline, so every contact is caught no matter how hard either
+     of them is moving. */
+  advance(dt) {
+    const k = this.puck;
+    const a = this.padStep(this.padA, dt);
+    const b = this.padStep(this.padB, dt);
+
+    const puckMove = Math.hypot(k.vx, k.vy) * dt;
+    const padMove = Math.max(Math.hypot(a.x1 - a.x0, a.y1 - a.y0),
+                             Math.hypot(b.x1 - b.x0, b.y1 - b.y0));
+    const steps = clamp(Math.ceil(Math.max(puckMove, padMove) / (PUCK_R * 0.7)), 1, 16);
+    const sdt = dt / steps;
+
+    for (let s = 1; s <= steps; s++) {
+      const f = s / steps;
+      this.padA.x = a.x0 + (a.x1 - a.x0) * f;
+      this.padA.y = a.y0 + (a.y1 - a.y0) * f;
+      this.padB.x = b.x0 + (b.x1 - b.x0) * f;
+      this.padB.y = b.y0 + (b.y1 - b.y0) * f;
+      if (this.puckSubstep(sdt)) return;   // a goal ends the frame
+    }
+
+    this.puckSettle(dt);
   }
 
   /* ---------------- lucky mode ---------------- */
@@ -320,57 +349,58 @@ class Game {
 
   /* ---------------- puck ---------------- */
 
-  movePuck(dt) {
+  /* Advance the puck by one sub-step and resolve everything it can touch.
+     Returns true when the puck has crossed a goal line. */
+  puckSubstep(sdt) {
     const k = this.puck;
 
-    // Sub-step so a fast puck can never tunnel through a paddle or wall.
-    const speed = Math.hypot(k.vx, k.vy);
-    const steps = clamp(Math.ceil((speed * dt) / (PUCK_R * 0.7)), 1, 12);
-    const sdt = dt / steps;
+    k.x += k.vx * sdt;
+    k.y += k.vy * sdt;
 
-    for (let s = 0; s < steps; s++) {
-      k.x += k.vx * sdt;
-      k.y += k.vy * sdt;
+    this.collidePaddle(k, this.padA);
+    this.collidePaddle(k, this.padB);
 
-      this.collidePaddle(k, this.padA);
-      this.collidePaddle(k, this.padB);
-
-      // Side walls
-      if (k.x < PUCK_R) {
-        k.x = PUCK_R;
-        k.vx = Math.abs(k.vx) * WALL_REST;
-        this.ev(1, k.x, k.y, Math.abs(k.vx));
-      } else if (k.x > W - PUCK_R) {
-        k.x = W - PUCK_R;
-        k.vx = -Math.abs(k.vx) * WALL_REST;
-        this.ev(1, k.x, k.y, Math.abs(k.vx));
-      }
-
-      const inMouth = k.x > GX0 && k.x < GX1;
-
-      // Top wall / B's goal
-      if (k.y < PUCK_R && !inMouth) {
-        k.y = PUCK_R;
-        k.vy = Math.abs(k.vy) * WALL_REST;
-        this.ev(1, k.x, k.y, Math.abs(k.vy));
-      }
-      // Bottom wall / A's goal
-      if (k.y > H - PUCK_R && !inMouth) {
-        k.y = H - PUCK_R;
-        k.vy = -Math.abs(k.vy) * WALL_REST;
-        this.ev(1, k.x, k.y, Math.abs(k.vy));
-      }
-
-      this.collidePost(k, GX0, 0);
-      this.collidePost(k, GX1, 0);
-      this.collidePost(k, GX0, H);
-      this.collidePost(k, GX1, H);
-
-      if (k.y < 0) { this.score('a'); return; }
-      if (k.y > H) { this.score('b'); return; }
+    // Side walls
+    if (k.x < PUCK_R) {
+      k.x = PUCK_R;
+      k.vx = Math.abs(k.vx) * WALL_REST;
+      this.ev(1, k.x, k.y, Math.abs(k.vx));
+    } else if (k.x > W - PUCK_R) {
+      k.x = W - PUCK_R;
+      k.vx = -Math.abs(k.vx) * WALL_REST;
+      this.ev(1, k.x, k.y, Math.abs(k.vx));
     }
 
-    // Friction + speed clamp
+    const inMouth = k.x > GX0 && k.x < GX1;
+
+    // Top wall / B's goal
+    if (k.y < PUCK_R && !inMouth) {
+      k.y = PUCK_R;
+      k.vy = Math.abs(k.vy) * WALL_REST;
+      this.ev(1, k.x, k.y, Math.abs(k.vy));
+    }
+    // Bottom wall / A's goal
+    if (k.y > H - PUCK_R && !inMouth) {
+      k.y = H - PUCK_R;
+      k.vy = -Math.abs(k.vy) * WALL_REST;
+      this.ev(1, k.x, k.y, Math.abs(k.vy));
+    }
+
+    this.collidePost(k, GX0, 0);
+    this.collidePost(k, GX1, 0);
+    this.collidePost(k, GX0, H);
+    this.collidePost(k, GX1, H);
+
+    if (k.y < 0) { this.score('a'); return true; }
+    if (k.y > H) { this.score('b'); return true; }
+    return false;
+  }
+
+  /* Friction, the speed ceiling and the anti-stall nudge - once per frame,
+     never per sub-step. */
+  puckSettle(dt) {
+    const k = this.puck;
+
     const f = Math.pow(this.frictionNow(), dt);
     k.vx *= f;
     k.vy *= f;
@@ -516,6 +546,9 @@ class Game {
       p: [r2(fx(this.puck.x)), r2(fy(this.puck.y)), r2(fv(this.puck.vx)), r2(fv(this.puck.vy))],
       m: [r2(fx(me.x)), r2(fy(me.y))],
       o: [r2(fx(foe.x)), r2(fy(foe.y))],
+      // The opponent's mallet velocity, so the client can carry it forward
+      // over the trip time instead of drawing it where it was a ping ago.
+      ov: [r2(fv(foe.vx)), r2(fv(foe.vy))],
       // Mallet radii travel with every frame: in lucky mode they change mid-rally.
       rm: r2(me.r),
       ro: r2(foe.r),

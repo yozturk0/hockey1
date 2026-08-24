@@ -373,23 +373,52 @@ final class GameModel: ObservableObject, NetDelegate {
         }
 
         guard let s = snap else { return }
-        // Extrapolate the puck over the packet's age, then smooth out jitter.
-        let age = min(CACurrentMediaTime() - snapAt, 0.14)
+        /* A snapshot describes the rink as it was one trip-time ago, so it is
+           carried forward over that trip *plus* the packet's own age. Drawing it
+           raw puts the puck a whole ping behind the mallet you are swinging at
+           it - which is exactly what "the mallet went straight through the puck"
+           looks like. */
+        let lead = Double(min(ping ?? 0, 240)) / 2000
+        let age = min(CACurrentMediaTime() - snapAt + lead, 0.22)
         let live = s.state == .playing
         let tpx = clampd(s.puck.x + (live ? s.puckV.x * age : 0), -6, Field.W + 6)
         let tpy = clampd(s.puck.y + (live ? s.puckV.y * age : 0), -6, Field.H + 6)
+        // The opponent's mallet gets the same treatment, so their strike lands
+        // on screen at the moment the puck leaves rather than a ping later.
+        let tox = clampd(s.foe.x + (live ? s.foeV.x * age : 0), 0, Field.W)
+        let toy = clampd(s.foe.y + (live ? s.foeV.y * age : 0), 0, Field.H / 2)
 
         let a = 1 - exp(-42 * dt)
         world.puck.x += (tpx - world.puck.x) * a
         world.puck.y += (tpy - world.puck.y) * a
-        world.foe.x += (s.foe.x - world.foe.x) * a
-        world.foe.y += (s.foe.y - world.foe.y) * a
+        world.foe.x += (tox - world.foe.x) * a
+        world.foe.y += (toy - world.foe.y) * a
 
         // Gently reconcile my paddle with the server's authoritative copy.
         let b = 1 - exp(-6 * dt)
         world.myPad.x += (s.me.x - world.myPad.x) * b
         world.myPad.y += (s.me.y - world.myPad.y) * b
         world.me = Vec(x: world.myPad.x, y: world.myPad.y)
+
+        // Whatever the numbers say, a solid mallet must never be drawn sitting
+        // on top of the puck. If the two overlap on screen the puck is nudged
+        // clear - the next snapshot corrects it, and a contact reads as one.
+        if live {
+            pushPuckOut(world.me, rMe)
+            pushPuckOut(world.foe, rFoe)
+        }
+    }
+
+    /// Cosmetic separation only: no velocity is invented here.
+    private func pushPuckOut(_ pad: Vec, _ r: Double) {
+        let dx = world.puck.x - pad.x, dy = world.puck.y - pad.y
+        let minD = Field.puckR + r
+        let d = (dx * dx + dy * dy).squareRoot()
+        guard d < minD else { return }
+        let nx = d == 0 ? 0 : dx / d
+        let ny = d == 0 ? -1 : dy / d
+        world.puck.x = pad.x + nx * minD
+        world.puck.y = pad.y + ny * minD
     }
 
     private func stepLocal(_ dt: Double) {

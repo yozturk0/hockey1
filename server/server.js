@@ -328,7 +328,14 @@ setInterval(() => {
 
 let lastTick = Date.now();
 let sendAccum = 0;
+let simAccum = 0;
 const SEND_INTERVAL = 1000 / SEND_HZ;
+const FIXED_DT = 1 / TICK_HZ;
+/* A shared-CPU host can stall the timer for a while. Feeding the whole gap to
+   the physics as one enormous step is how a puck ends up on the far side of a
+   mallet, so the backlog is replayed as fixed 1/60 steps instead, and anything
+   past a quarter second is written off rather than fast-forwarded. */
+const MAX_CATCHUP = 15;
 
 setInterval(() => {
   const now = Date.now();
@@ -345,10 +352,19 @@ setInterval(() => {
     if (sendAccum < 0) sendAccum = 0;
   }
 
+  simAccum += dt;
+  let steps = Math.floor(simAccum / FIXED_DT);
+  if (steps > MAX_CATCHUP) steps = MAX_CATCHUP;
+  simAccum -= steps * FIXED_DT;
+  if (simAccum > FIXED_DT) simAccum = FIXED_DT;
+
   for (const room of rooms.values()) {
     const g = room.game;
     const before = g.state;
-    if (g.state === ST.PLAYING || g.state === ST.COUNTDOWN) g.step(dt);
+    for (let i = 0; i < steps; i++) {
+      if (g.state !== ST.PLAYING && g.state !== ST.COUNTDOWN) break;
+      g.step(FIXED_DT);
+    }
     if (g.state === ST.HALFTIME && before !== ST.HALFTIME) beginHalftime(room);
     else if (g.state === ST.HALFTIME && room.halfSince &&
              now - room.halfSince > HALFTIME_AUTO_MS) endHalftime(room);

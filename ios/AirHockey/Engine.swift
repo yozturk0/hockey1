@@ -218,9 +218,7 @@ final class Engine {
         }
         guard state == .playing else { return }
         if mode == .lucky { luckyStep(dt) }
-        movePaddle(padA, dt)
-        movePaddle(padB, dt)
-        movePuck(dt)
+        advance(dt)
     }
 
     private func holdPaddle(_ p: Paddle) {
@@ -289,7 +287,13 @@ final class Engine {
 
     private func frictionNow() -> Double { iceMs > 0 ? iceFriction : Field.friction }
 
-    private func movePaddle(_ p: Paddle, _ dt: Double) {
+    /// Where a mallet wants to be at the end of this frame, and how fast it is
+    /// travelling to get there. It is deliberately *not* moved here: the mallet
+    /// is carried across the sub-steps together with the puck, because a mallet
+    /// that teleports a whole frame's worth of distance jumps clean over any
+    /// puck that happened to be in the gap - which is what "the mallet went
+    /// through the puck" looks like.
+    private func padStep(_ p: Paddle, _ dt: Double) -> (x0: Double, y0: Double, x1: Double, y1: Double) {
         let dx = p.tx - p.x, dy = p.ty - p.y
         let d = (dx * dx + dy * dy).squareRoot()
         let maxStep = Field.padMaxSpeed * dt
@@ -300,15 +304,30 @@ final class Engine {
         }
         p.vx = (nx - p.x) / dt
         p.vy = (ny - p.y) / dt
-        p.x = nx; p.y = ny
+        return (p.x, p.y, nx, ny)
     }
 
-    private func movePuck(_ dt: Double) {
+    /// One frame of the live rink: both mallets and the puck move along the
+    /// same sub-divided timeline, so every contact is caught no matter how hard
+    /// either of them is moving.
+    private func advance(_ dt: Double) {
+        let a = padStep(padA, dt)
+        let b = padStep(padB, dt)
+
         let speed = (puckV.x * puckV.x + puckV.y * puckV.y).squareRoot()
-        let steps = Int(clampd((speed * dt / (Field.puckR * 0.7)).rounded(.up), 1, 12))
+        let padMove = max(((a.x1 - a.x0) * (a.x1 - a.x0) + (a.y1 - a.y0) * (a.y1 - a.y0)).squareRoot(),
+                          ((b.x1 - b.x0) * (b.x1 - b.x0) + (b.y1 - b.y0) * (b.y1 - b.y0)).squareRoot())
+        let move = max(speed * dt, padMove)
+        let steps = Int(clampd((move / (Field.puckR * 0.7)).rounded(.up), 1, 16))
         let sdt = dt / Double(steps)
 
-        for _ in 0..<steps {
+        for i in 1...steps {
+            let f = Double(i) / Double(steps)
+            padA.x = a.x0 + (a.x1 - a.x0) * f
+            padA.y = a.y0 + (a.y1 - a.y0) * f
+            padB.x = b.x0 + (b.x1 - b.x0) * f
+            padB.y = b.y0 + (b.y1 - b.y0) * f
+
             puck.x += puckV.x * sdt
             puck.y += puckV.y * sdt
 
