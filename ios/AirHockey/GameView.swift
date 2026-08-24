@@ -257,42 +257,7 @@ struct GameView: View {
 
             Spacer()
 
-            HStack {
-                Group {
-                    if m.gameMode == .lucky && m.halfAt > 0 {
-                        (Text("ŞANSLI · ") + Text("\(m.halfAt)").foregroundColor(T.gold)
-                         + Text(" DEVRE · \(m.target) GOL"))
-                    } else if m.gameMode == .lucky {
-                        Text("ŞANSLI · \(m.target) GOL")
-                    } else if m.halfAt > 0 {
-                        (Text("\(m.halfAt)").foregroundColor(T.gold)
-                         + Text(" DEVRE · \(m.target) GOL"))
-                    } else {
-                        Text("\(m.target) GOL")
-                    }
-                }
-                .font(.system(size: sz(11), weight: .heavy)).tracking(2)
-                .foregroundStyle(T.dim)
-                .padding(.horizontal, 12).padding(.vertical, 5)
-                .background(T.bg.opacity(0.5), in: Capsule())
-                .overlay(Capsule().stroke(T.line))
-                Spacer()
-                if m.mode == .online {
-                    Text(m.ping.map { "\($0) ms" } ?? "—")
-                        .font(.system(size: sz(11), weight: .bold)).monospacedDigit()
-                        .foregroundStyle((m.ping ?? 0) > 140 ? T.foe : T.dim)
-                        .padding(.horizontal, 12).padding(.vertical, 5)
-                        .background(T.bg.opacity(0.5), in: Capsule())
-                        .overlay(Capsule().stroke(T.line))
-                }
-            }
-            // The countdown lands right on top of this strip — let it through.
-            .opacity(m.centerText.isEmpty ? 1 : 0)
-            .animation(.easeOut(duration: 0.18), value: m.centerText.isEmpty)
-
-            Spacer()
-
-            HStack(spacing: 12) {
+            HStack(alignment: .lastTextBaseline, spacing: 12) {
                 Text("\(m.scoreMe)")
                     .font(.system(size: sz(34), weight: .black, design: .rounded))
                     .monospacedDigit()
@@ -300,6 +265,9 @@ struct GameView: View {
                 Text(m.mode == .local ? "OYUNCU 1" : "SEN")
                     .font(.system(size: sz(12), weight: .bold)).tracking(1)
                     .foregroundStyle(T.dim)
+                    .lineLimit(1)
+                Spacer(minLength: 12)
+                meta.layoutPriority(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -317,6 +285,43 @@ struct GameView: View {
             }
             .padding(.trailing, 12)
         }
+    }
+
+    /// Match rules and ping: reference you glance at between rallies, not
+    /// something that should compete with the puck. Tucked into the far corner
+    /// of your own side and kept faint — no pill, no border.
+    private var meta: some View {
+        HStack(alignment: .lastTextBaseline, spacing: 10) {
+            Group {
+                if m.gameMode == .lucky && m.halfAt > 0 {
+                    (Text("ŞANSLI · ") + Text("\(m.halfAt)").foregroundColor(T.gold)
+                     + Text(" DEVRE · \(m.target) GOL"))
+                } else if m.gameMode == .lucky {
+                    Text("ŞANSLI · \(m.target) GOL")
+                } else if m.halfAt > 0 {
+                    (Text("\(m.halfAt)").foregroundColor(T.gold)
+                     + Text(" DEVRE · \(m.target) GOL"))
+                } else {
+                    Text("\(m.target) GOL")
+                }
+            }
+            .font(.system(size: sz(10), weight: .bold)).tracking(1.4)
+            .foregroundStyle(T.dim)
+            .opacity(0.34)
+
+            if m.mode == .online {
+                let slow = (m.ping ?? 0) > 140
+                Text(m.ping.map { "\($0) ms" } ?? "—")
+                    .font(.system(size: sz(10), weight: .bold)).monospacedDigit()
+                    .foregroundStyle(slow ? T.foe : T.dim)
+                    // The fade sits on each item, not on the row: a child cannot
+                    // out-shine a translucent parent, and a bad ping still has
+                    // to be readable.
+                    .opacity(slow ? 0.8 : 0.34)
+            }
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.85)
     }
 
     private var centerMessage: some View {
