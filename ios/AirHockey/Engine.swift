@@ -26,9 +26,47 @@ enum Field {
     static let padTransfer: Double = 0.22     // mallet speed injected along the normal
     static let padDrag: Double = 0.12         // ...and sideways, so a brush curls the puck
 
-    static let countdownStart: Double = 3000
-    static let countdownGoal: Double = 1600
+    /// One countdown length for every restart - kickoff, goals and half time
+    /// all run the same 3 - 2 - 1. 2.5 s is long enough to read all three
+    /// digits and short enough that nobody drums their fingers.
+    static let countdownMs: Double = 2500
+    static let countdownSteps = 3
     static let stallLimit: Double = 5000
+}
+
+/// "Sansli" sprinkles small, short-lived twists over an otherwise normal
+/// match. Everything here is deliberately mild: a twist should change how a
+/// rally feels, never decide who wins it.
+enum GameMode: String {
+    case classic = "klasik"
+    case lucky = "sansli"
+
+    static func from(_ raw: String?) -> GameMode {
+        GameMode(rawValue: raw ?? "") ?? .classic
+    }
+}
+
+enum Lucky {
+    static let firstMs: Double = 4500     // first twist of a rally
+    static let gapMs: Double = 6500       // ...then one every 6.5 - 9 s
+    static let jitterMs: Double = 2500
+    static let durMs: Double = 6000       // how long one twist lasts
+    static let grow: Double = 1.18        // +18 % mallet
+    static let shrink: Double = 0.85      // -15 % mallet
+    static let iceFast: Double = 0.972    // slick ice: the puck keeps rolling
+    static let iceSlow: Double = 0.900    // sticky ice: it dies sooner
+}
+
+/// Effect codes carried by a type-3 event.
+enum FX {
+    static let grow = 0, shrink = 1, fast = 2, slow = 3
+}
+
+/// Which digit a countdown of `ms` should be showing. Always 3 -> 2 -> 1,
+/// whatever the countdown's total length happens to be.
+func countdownDigit(_ ms: Double, total: Double = Field.countdownMs) -> Int {
+    let step = total / Double(Field.countdownSteps)
+    return Int(clampd((ms / step).rounded(.up), 1, Double(Field.countdownSteps)))
 }
 
 enum GameState: Int {
@@ -49,7 +87,13 @@ final class Paddle {
     var x: Double, y: Double
     var tx: Double, ty: Double
     var vx: Double = 0, vy: Double = 0
-    init(x: Double, y: Double) { self.x = x; self.y = y; self.tx = x; self.ty = y }
+    /// Live radius. In lucky mode it drifts away from the match's base size.
+    var r: Double
+    var scale: Double = 1
+    var fxMs: Double = 0
+    init(x: Double, y: Double, r: Double = Field.padR) {
+        self.x = x; self.y = y; self.tx = x; self.ty = y; self.r = r
+    }
 }
 
 @inline(__always) func clampd(_ v: Double, _ lo: Double, _ hi: Double) -> Double {
@@ -64,9 +108,10 @@ final class Engine {
     }
 
     var target: Int
-    /// Mallet radius for *this* match; the menu lets players pick it.
+    /// Base mallet radius for *this* match; the menu lets players pick it.
     let padR: Double
-    /// Score at which the phone gets turned around, or 0 when there is no break.
+    private(set) var mode: GameMode
+    /// Score at which the break happens, or 0 when there is no break.
     private(set) var halfAt: Int
     private(set) var halfDone = false
     var scoreA = 0
@@ -78,15 +123,24 @@ final class Engine {
 
     var puck = Vec(x: Field.W / 2, y: Field.H / 2)
     var puckV = Vec(x: 0, y: 0)
-    var padA = Paddle(x: Field.W / 2, y: Field.H * 0.78)
-    var padB = Paddle(x: Field.W / 2, y: Field.H * 0.22)
+    var padA: Paddle
+    var padB: Paddle
 
     private var stallMs: Double = 0
+    private var luckyMs = Lucky.firstMs
+    private var luckyBag: [(String, Int)] = []
+    private var iceMs: Double = 0
+    private var iceFriction = Field.friction
 
-    init(target: Int, padR: Double = Field.padR, halftime: Bool = false) {
+    init(target: Int, padR: Double = Field.padR, halftime: Bool = false,
+         mode: GameMode = .classic) {
         self.target = target
-        self.padR = clampd(padR, Field.padRMin, Field.padRMax)
+        let r = clampd(padR, Field.padRMin, Field.padRMax)
+        self.padR = r
+        self.mode = mode
         self.halfAt = halftime ? Engine.halftimeFor(target) : 0
+        padA = Paddle(x: Field.W / 2, y: Field.H * 0.78, r: r)
+        padB = Paddle(x: Field.W / 2, y: Field.H * 0.22, r: r)
         resetPuck(dir: Bool.random() ? 1 : -1)
     }
 
@@ -100,16 +154,28 @@ final class Engine {
     }
 
     func resetPaddles() {
-        padA = Paddle(x: Field.W / 2, y: Field.H * 0.78)
-        padB = Paddle(x: Field.W / 2, y: Field.H * 0.22)
+        padA = Paddle(x: Field.W / 2, y: Field.H * 0.78, r: padR)
+        padB = Paddle(x: Field.W / 2, y: Field.H * 0.22, r: padR)
     }
 
-    func startCountdown(_ ms: Double = Field.countdownStart) {
+    /// Every rally starts from a clean slate, so a twist can never carry a
+    /// scoring advantage over into the next face-off.
+    func clearLucky() {
+        iceMs = 0
+        iceFriction = Field.friction
+        luckyMs = Lucky.firstMs
+        for p in [padA, padB] { p.scale = 1; p.r = padR; p.fxMs = 0 }
+    }
+
+    /// Called when both players are present, and after every goal.
+    func startCountdown(_ ms: Double = Field.countdownMs) {
         state = .countdown
         countdown = ms
+        resetPaddles()
+        clearLucky()
     }
 
-    /// Players have turned the phone around; kick the second half off.
+    /// Both players are back from the break; kick the second half off.
     func resumeHalftime() {
         if state == .halftime { startCountdown() }
     }
@@ -117,17 +183,20 @@ final class Engine {
     func restart() {
         scoreA = 0; scoreB = 0; winner = nil
         halfDone = false
-        resetPaddles()
         resetPuck(dir: Bool.random() ? 1 : -1)
         startCountdown()
     }
 
     func setInput(side: String, x: Double, y: Double) {
+        // Mallets are locked while the countdown runs; accepting input here
+        // would let a player creep across the rink before the puck is live.
+        guard state == .playing else { return }
         let p = side == "a" ? padA : padB
-        p.tx = clampd(x, padR, Field.W - padR)
+        let r = p.r
+        p.tx = clampd(x, r, Field.W - r)
         p.ty = side == "a"
-            ? clampd(y, Field.H / 2 + padR, Field.H - padR)
-            : clampd(y, padR, Field.H / 2 - padR)
+            ? clampd(y, Field.H / 2 + r, Field.H - r)
+            : clampd(y, r, Field.H / 2 - r)
     }
 
     private func ev(_ t: Int, _ x: Double, _ y: Double, _ i: Double) {
@@ -139,16 +208,86 @@ final class Engine {
     func step(dt: Double) {
         if state == .countdown {
             countdown -= dt * 1000
-            movePaddle(padA, dt)
-            movePaddle(padB, dt)
+            // Both mallets are frozen on their spots. Letting them slide about
+            // during "3 - 2 - 1" reads as lag, and a mallet already at full
+            // tilt when the puck goes live is a free shot.
+            holdPaddle(padA)
+            holdPaddle(padB)
             if countdown <= 0 { countdown = 0; state = .playing }
             return
         }
         guard state == .playing else { return }
+        if mode == .lucky { luckyStep(dt) }
         movePaddle(padA, dt)
         movePaddle(padB, dt)
         movePuck(dt)
     }
+
+    private func holdPaddle(_ p: Paddle) {
+        p.tx = p.x; p.ty = p.y
+        p.vx = 0; p.vy = 0
+    }
+
+    // MARK: - lucky mode
+
+    private func luckyStep(_ dt: Double) {
+        let ms = dt * 1000
+
+        for p in [padA, padB] where p.fxMs > 0 {
+            p.fxMs -= ms
+            if p.fxMs <= 0 { p.fxMs = 0; scalePad(p, 1) }
+        }
+        if iceMs > 0 {
+            iceMs -= ms
+            if iceMs <= 0 { iceMs = 0; iceFriction = Field.friction }
+        }
+
+        luckyMs -= ms
+        if luckyMs <= 0 {
+            luckyMs = Lucky.gapMs + Double.random(in: 0..<Lucky.jitterMs)
+            rollLucky()
+        }
+    }
+
+    /// Roughly one twist in three re-surfaces the ice, which hits both players
+    /// equally. The rest are personal and come out of a shuffled bag, so over
+    /// every four of them each player gets one bigger and one smaller mallet.
+    func rollLucky() {
+        if Double.random(in: 0..<1) < 0.34 {
+            let fast = Bool.random()
+            iceFriction = fast ? Lucky.iceFast : Lucky.iceSlow
+            iceMs = Lucky.durMs
+            ev(3, puck.x, puck.y, Double(fast ? FX.fast : FX.slow))
+            return
+        }
+
+        if luckyBag.isEmpty {
+            luckyBag = [("a", FX.grow), ("a", FX.shrink),
+                        ("b", FX.grow), ("b", FX.shrink)].shuffled()
+        }
+        let (side, kind) = luckyBag.removeLast()
+        let p = side == "a" ? padA : padB
+        scalePad(p, kind == FX.grow ? Lucky.grow : Lucky.shrink)
+        p.fxMs = Lucky.durMs
+        ev(3, p.x, p.y, Double(kind))
+    }
+
+    /// Resize a mallet and pull it back inside its own half, since the legal
+    /// area shrinks and grows with the radius.
+    func scalePad(_ p: Paddle, _ scale: Double) {
+        p.scale = scale
+        p.r = clampd(padR * scale, Field.padRMin, Field.padRMax)
+        let isA = p === padA
+        let r = p.r
+        let lo = isA ? Field.H / 2 + r : r
+        let hi = isA ? Field.H - r : Field.H / 2 - r
+        p.x = clampd(p.x, r, Field.W - r)
+        p.y = clampd(p.y, lo, hi)
+        p.tx = clampd(p.tx, r, Field.W - r)
+        p.ty = clampd(p.ty, lo, hi)
+    }
+
+    private func frictionNow() -> Double { iceMs > 0 ? iceFriction : Field.friction }
 
     private func movePaddle(_ p: Paddle, _ dt: Double) {
         let dx = p.tx - p.x, dy = p.ty - p.y
@@ -208,7 +347,7 @@ final class Engine {
             if puck.y > Field.H { score("b"); return }
         }
 
-        let f = pow(Field.friction, dt)
+        let f = pow(frictionNow(), dt)
         puckV.x *= f; puckV.y *= f
         let sp = (puckV.x * puckV.x + puckV.y * puckV.y).squareRoot()
         if sp > Field.puckMax {
@@ -249,7 +388,7 @@ final class Engine {
     private func collidePaddle(_ p: Paddle) {
         let dx = puck.x - p.x, dy = puck.y - p.y
         var dist = (dx * dx + dy * dy).squareRoot()
-        let minD = Field.puckR + padR
+        let minD = Field.puckR + p.r
         guard dist < minD else { return }
         if dist == 0 { dist = 0.0001 }
 
@@ -296,11 +435,12 @@ final class Engine {
     private func score(_ side: String) {
         if side == "a" { scoreA += 1 } else { scoreB += 1 }
         ev(2, Field.W / 2, side == "a" ? 0 : Field.H, side == "a" ? 0 : 1)
-        resetPaddles()
 
         if scoreA >= target || scoreB >= target {
             winner = scoreA > scoreB ? "a" : "b"
             state = .over
+            resetPaddles()
+            clearLucky()
             puck = Vec(x: Field.W / 2, y: Field.H / 2)
             puckV = Vec(x: 0, y: 0)
             return
@@ -308,13 +448,15 @@ final class Engine {
         // Conceding side gets the puck: A defends y=H, B defends y=0.
         resetPuck(dir: side == "a" ? -1 : 1)
 
-        // Half time: freeze here until the players say they have turned the phone.
+        // Half time: freeze here until both players say they are ready.
         if halfAt > 0 && !halfDone && max(scoreA, scoreB) >= halfAt {
             halfDone = true
             state = .halftime
+            resetPaddles()
+            clearLucky()
             return
         }
 
-        startCountdown(Field.countdownGoal)
+        startCountdown()
     }
 }
