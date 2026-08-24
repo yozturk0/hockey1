@@ -435,16 +435,12 @@ function centerMsg(txt, cls, ms) {
   const el = $('cmsg');
   $('cmsg-txt').textContent = txt;
   el.className = 'center-msg' + (cls ? ' ' + cls : '');
-  // The mid-rink HUD strip sits exactly where the countdown lands, so it
-  // steps aside while anything is being announced.
-  $('s-game').classList.add('msg');
   clearTimeout(msgTimer);
   msgTimer = ms > 0 ? setTimeout(hideMsg, ms) : null;
 }
 function hideMsg() {
   msgTimer = null;
   $('cmsg').classList.add('hidden');
-  $('s-game').classList.remove('msg');
 }
 function hideMsgIfIdle() {
   if (!msgTimer) hideMsg();
