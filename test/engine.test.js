@@ -1,5 +1,5 @@
-const { Game, ST, CONST } = require('../web/engine.js');
-const { W, H, GX0, GX1, PUCK_R, PAD_R } = CONST;
+const { Game, ST, CONST, halftimeFor } = require('../web/engine.js');
+const { W, H, GX0, GX1, PUCK_R, PAD_R, PUCK_MAX } = CONST;
 let pass = 0, fail = 0;
 const ok = (name, cond, extra='') => { cond ? (pass++, console.log('  PASS', name)) : (fail++, console.log('  FAIL', name, extra)); };
 
@@ -53,7 +53,79 @@ console.log('paddle physics');
   g.padA.x = 5; g.padA.y = 190; g.padB.x = 5; g.padB.y = 10;
   for (let i = 0; i < 600; i++) { g.step(1/60); if (g.state === ST.COUNTDOWN) break; }
   const sp = Math.hypot(g.puck.vx, g.puck.vy);
-  ok('puck speed stays clamped', sp <= 191, `speed=${sp}`);
+  ok('puck speed stays clamped', sp <= PUCK_MAX + 1, `speed=${sp}`);
+}
+
+console.log('strike force');
+{
+  // A driven mallet must send the puck away far harder than a parked one.
+  const smash = (padSpeed) => {
+    const g = new Game(3); g.state = ST.PLAYING;
+    g.puck.x = 50; g.puck.y = 150; g.puck.vx = 0; g.puck.vy = 0;
+    g.padA.x = 50; g.padA.y = 150 + PUCK_R + PAD_R - 1;
+    g.padA.vx = 0; g.padA.vy = -padSpeed;
+    g.padB.x = 5; g.padB.y = 10;
+    g.collidePaddle(g.puck, g.padA);
+    return Math.hypot(g.puck.vx, g.puck.vy);
+  };
+  const soft = smash(45), hard = smash(230);
+  ok('a hard strike beats a soft one by a wide margin', hard > soft * 2.4, `soft=${soft} hard=${hard}`);
+  ok('a full-force strike reaches top speed', hard >= PUCK_MAX - 1, `hard=${hard}`);
+  ok('a soft touch stays soft', soft < PUCK_MAX * 0.55, `soft=${soft}`);
+}
+{
+  // Parking the mallet in front of a fast puck is a block, not a rocket.
+  const g = new Game(3); g.state = ST.PLAYING;
+  g.puck.x = 50; g.puck.y = 150; g.puck.vx = 0; g.puck.vy = 160;
+  g.padA.x = 50; g.padA.y = 150 + PUCK_R + PAD_R - 1;
+  g.padA.vx = 0; g.padA.vy = 0;
+  g.padB.x = 5; g.padB.y = 10;
+  g.collidePaddle(g.puck, g.padA);
+  const sp = Math.hypot(g.puck.vx, g.puck.vy);
+  ok('a passive block does not add energy', sp <= 160, `speed=${sp}`);
+}
+
+console.log('mallet size');
+{
+  const g = new Game({ target: 3, padR: 4 });
+  ok('padR is honoured', g.padR === 4, `padR=${g.padR}`);
+  g.state = ST.PLAYING;
+  g.applyInput('a', 0, 199);
+  g.step(1/60);
+  ok('a small mallet may sit closer to the boards', g.padA.tx === 4, `tx=${g.padA.tx}`);
+
+  const big = new Game({ target: 3, padR: 99 });
+  ok('an absurd radius is clamped', big.padR === CONST.PAD_R_MAX, `padR=${big.padR}`);
+  ok('a plain number still means the target score', new Game(9).target === 9);
+}
+
+console.log('half time');
+{
+  ok('7 goals break at 4', halftimeFor(7) === 4);
+  ok('10 goals break at 5', halftimeFor(10) === 5);
+  ok('a 2-goal sprint has no break', halftimeFor(2) === 0);
+
+  const g = new Game({ target: 5, halftime: true });   // break at 3
+  ok('halfAt computed', g.halfAt === 3, `halfAt=${g.halfAt}`);
+  g.state = ST.PLAYING;
+  g.score('a'); g.score('a');
+  ok('no break before the halfway goal', g.state !== ST.HALFTIME, `state=${g.state}`);
+  g.state = ST.PLAYING;
+  g.score('a');
+  ok('the halfway goal stops the clock', g.state === ST.HALFTIME, `state=${g.state}`);
+  const before = { x: g.puck.x, y: g.puck.y };
+  g.step(1/60);
+  ok('nothing moves during the break', g.puck.x === before.x && g.puck.y === before.y);
+  g.resumeHalftime();
+  ok('resuming starts a countdown', g.state === ST.COUNTDOWN, `state=${g.state}`);
+  g.state = ST.PLAYING;
+  g.score('b'); g.score('b'); g.state = ST.PLAYING; g.score('b');
+  ok('the break happens once per match', g.state !== ST.HALFTIME, `state=${g.state}`);
+
+  const off = new Game({ target: 5 });
+  off.state = ST.PLAYING;
+  off.score('a'); off.state = ST.PLAYING; off.score('a'); off.state = ST.PLAYING; off.score('a');
+  ok('online games never break', off.state !== ST.HALFTIME, `state=${off.state}`);
 }
 
 console.log('paddle containment');

@@ -23,6 +23,7 @@ final class Sound {
     private var countHigh: AVAudioPCMBuffer?
     private var uiTap: AVAudioPCMBuffer?
     private var joinCue: AVAudioPCMBuffer?
+    private var halfCue: AVAudioPCMBuffer?
 
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
     private let heavyHaptic = UIImpactFeedbackGenerator(style: .heavy)
@@ -166,6 +167,12 @@ final class Sound {
         countHigh = render([Partial(f0: 900, f1: 900, dur: 0.20, gain: 0.16, wave: .square, cutoff: 2400)])
         uiTap     = render([Partial(f0: 660, f1: 880, dur: 0.055, gain: 0.11, wave: .sine)])
         joinCue   = render(arp([587.33, 880], step: 0.09, dur: 0.16, gain: 0.18))
+        // Half time: two short whistle blasts, unmistakably "stop and turn".
+        halfCue   = render([0.0, 0.24].flatMap { d in
+            [Partial(f0: 1180, f1: 1240, dur: 0.20, gain: 0.12, wave: .square,
+                     delay: d, cutoff: 3000),
+             Partial(f0: 1760, f1: 1820, dur: 0.20, gain: 0.07, wave: .sine, delay: d)]
+        })
     }
 
     // MARK: - playback
@@ -193,6 +200,13 @@ final class Sound {
     func goal(mine: Bool) {
         play(mine ? goalWin : goalLose)
         notify.notificationOccurred(mine ? .success : .warning)
+    }
+
+    /// Half time — the whistle plus a distinctive double buzz.
+    func half() {
+        play(halfCue)
+        notify.notificationOccurred(.warning)
+        heavyHaptic.impactOccurred(intensity: 0.9)
     }
 
     func over(win: Bool) {

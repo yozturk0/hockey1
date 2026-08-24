@@ -43,7 +43,7 @@ struct GameView: View {
 
                 TimelineView(.animation) { _ in
                     Canvas { ctx, size in
-                        draw(ctx, RinkLayout(size: size))
+                        draw(ctx, RinkLayout(size: size), size: size)
                     }
                 }
 
@@ -51,11 +51,13 @@ struct GameView: View {
                     handleTouch(id: id, point: point, phase: phase, layout: layout)
                 }
 
-                hud
-                centerMessage
+                hud.rotationEffect(.degrees(m.flip ? 180 : 0))
+                centerMessage.rotationEffect(.degrees(m.flip ? 180 : 0))
+                if m.showHalftime { halftime.transition(.opacity) }
                 if m.showOverlay { overlay.transition(.opacity) }
             }
             .animation(.easeOut(duration: 0.2), value: m.showOverlay)
+            .animation(.easeOut(duration: 0.2), value: m.showHalftime)
         }
         .statusBarHidden(true)
         .onAppear {
@@ -71,7 +73,11 @@ struct GameView: View {
     // MARK: - input
 
     private func handleTouch(id: Int, point: CGPoint, phase: Int, layout: RinkLayout) {
-        let v = layout.field(point)
+        guard !m.showHalftime else { return }
+        var v = layout.field(point)
+        // Second half: the rink is drawn a half turn round, so touches come
+        // back through the same turn.
+        if m.flip { v = Vec(x: Field.W - v.x, y: Field.H - v.y) }
         switch phase {
         case 0:
             // The half a finger lands in decides which paddle it owns for its
@@ -94,8 +100,15 @@ struct GameView: View {
 
     // MARK: - rink drawing
 
-    private func draw(_ base: GraphicsContext, _ L: RinkLayout) {
+    private func draw(_ base: GraphicsContext, _ L: RinkLayout, size: CGSize) {
         var ctx = base
+        // Second half: the whole rink is drawn upside down, because the phone
+        // itself has been turned around on the table.
+        if m.flip {
+            ctx.translateBy(x: size.width / 2, y: size.height / 2)
+            ctx.rotate(by: .radians(.pi))
+            ctx.translateBy(x: -size.width / 2, y: -size.height / 2)
+        }
         if m.world.shake > 0.01 {
             let s = m.world.shake * Double(L.len(1.4))
             ctx.translateBy(x: CGFloat.random(in: -1...1) * s, y: CGFloat.random(in: -1...1) * s)
@@ -105,9 +118,7 @@ struct GameView: View {
         let rink = Path(roundedRect: rect, cornerRadius: L.len(9), style: .continuous)
 
         ctx.fill(rink, with: .linearGradient(
-            Gradient(colors: [Color(red: 0.075, green: 0.137, blue: 0.278),
-                              Color(red: 0.047, green: 0.086, blue: 0.192),
-                              Color(red: 0.075, green: 0.137, blue: 0.278)]),
+            Gradient(colors: PAL.ice),
             startPoint: CGPoint(x: rect.midX, y: rect.minY),
             endPoint: CGPoint(x: rect.midX, y: rect.maxY)))
 
@@ -119,7 +130,7 @@ struct GameView: View {
             c.fill(Path(CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height / 2)),
                    with: .color(T.foe.opacity(0.06)))
 
-            let ink = Color(red: 0.588, green: 0.745, blue: 0.941).opacity(0.30)
+            let ink = PAL.ink
             let lw = max(1, L.len(0.5))
 
             var mid = Path()
@@ -133,7 +144,7 @@ struct GameView: View {
             c.fill(circle(cx, cy, L.len(2.2)), with: .color(ink))
 
             // goal creases
-            let crease = ink.opacity(0.72)
+            let crease = PAL.inkSoft
             var top = Path()
             top.addArc(center: CGPoint(x: cx, y: L.py(0)), radius: L.len(26),
                        startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
@@ -147,16 +158,15 @@ struct GameView: View {
         drawGoal(ctx, L, y: L.py(0), color: T.foe)
         drawGoal(ctx, L, y: L.py(Field.H), color: T.me)
 
-        ctx.stroke(rink, with: .color(Color(red: 0.471, green: 0.667, blue: 0.902).opacity(0.34)),
-                   lineWidth: max(1.5, L.len(0.7)))
+        ctx.stroke(rink, with: .color(PAL.board), lineWidth: max(1.5, L.len(0.7)))
 
-        // trail
+        // Motion beam, in the striker's colour and lighter than the puck itself.
+        let beam = m.world.trailTint ?? Prefs.shared.puckStops[1]
         let trail = m.world.trail
         for (i, t) in trail.enumerated() {
             let f = Double(i) / Double(max(1, trail.count))
             let r = L.len(Field.puckR) * CGFloat(0.35 + 0.6 * f)
-            ctx.fill(circle(L.px(t.x), L.py(t.y), r),
-                     with: .color(T.gold.opacity(f * 0.30)))
+            ctx.fill(circle(L.px(t.x), L.py(t.y), r), with: .color(beam.opacity(f * 0.24)))
         }
 
         drawPaddle(ctx, L, at: m.world.foe, color: T.foe,
@@ -169,9 +179,18 @@ struct GameView: View {
         Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
     }
 
+    /// A soft contact shadow reads as depth on the light rinks, where a neon
+    /// glow would just look muddy.
+    private func drawShadow(_ ctx: GraphicsContext, _ p: CGPoint, _ r: CGFloat) {
+        guard let sh = PAL.shadow else { return }
+        ctx.fill(Path(ellipseIn: CGRect(x: p.x + r * 0.16 - r, y: p.y + r * 0.30 - r * 0.94,
+                                        width: r * 2, height: r * 1.88)),
+                 with: .color(sh))
+    }
+
     private func drawGoal(_ ctx: GraphicsContext, _ L: RinkLayout, y: CGFloat, color: Color) {
         ctx.drawLayer { c in
-            c.addFilter(.shadow(color: color, radius: L.len(4)))
+            if PAL.glow { c.addFilter(.shadow(color: color, radius: L.len(4))) }
             var p = Path()
             p.move(to: CGPoint(x: L.px(Field.gx0), y: y))
             p.addLine(to: CGPoint(x: L.px(Field.gx1), y: y))
@@ -183,34 +202,40 @@ struct GameView: View {
     private func drawPuck(_ ctx: GraphicsContext, _ L: RinkLayout, at v: Vec) {
         let p = L.point(v)
         let r = L.len(Field.puckR)
+        let stops = Prefs.shared.puckStops
+        drawShadow(ctx, p, r)
         ctx.drawLayer { c in
-            c.addFilter(.shadow(color: T.gold.opacity(0.9), radius: L.len(5)))
+            if PAL.glow { c.addFilter(.shadow(color: stops[1].opacity(0.9), radius: L.len(5))) }
             c.fill(circle(p.x, p.y, r), with: .radialGradient(
-                Gradient(colors: [Color(red: 1, green: 0.965, blue: 0.847), T.gold,
-                                  Color(red: 0.788, green: 0.561, blue: 0.118)]),
+                Gradient(colors: stops),
                 center: CGPoint(x: p.x - r * 0.3, y: p.y - r * 0.4),
                 startRadius: 0, endRadius: r * 1.4))
         }
+        // A hairline in the opposite direction to the rink keeps a black puck on
+        // a dark rink (or a white one on ice) from disappearing.
+        ctx.stroke(circle(p.x, p.y, r - max(0.4, L.len(0.12))),
+                   with: .color(PAL.glow ? .white.opacity(0.5) : .black.opacity(0.22)),
+                   lineWidth: max(1, L.len(0.3)))
     }
 
     private func drawPaddle(_ ctx: GraphicsContext, _ L: RinkLayout,
                             at v: Vec, color: Color, dim: Bool) {
         let p = L.point(v)
-        let r = L.len(Field.padR)
+        let r = L.len(m.padR)
         var c = ctx
         c.opacity = dim ? 0.55 : 1
+        drawShadow(c, p, r)
 
         c.drawLayer { g in
-            g.addFilter(.shadow(color: color, radius: L.len(4)))
+            if PAL.glow { g.addFilter(.shadow(color: color, radius: L.len(4))) }
             g.fill(circle(p.x, p.y, r), with: .radialGradient(
                 Gradient(stops: [.init(color: Color.white.opacity(0.30), location: 0),
                                  .init(color: color, location: 0.62),
                                  .init(color: color, location: 1)]),
                 center: p, startRadius: r * 0.25, endRadius: r))
         }
-        c.fill(circle(p.x, p.y, r * 0.52),
-               with: .color(Color(red: 0.031, green: 0.055, blue: 0.102).opacity(0.62)))
-        c.stroke(circle(p.x, p.y, r * 0.52), with: .color(Color.white.opacity(0.28)),
+        c.fill(circle(p.x, p.y, r * 0.52), with: .color(PAL.padInner))
+        c.stroke(circle(p.x, p.y, r * 0.52), with: .color(PAL.padRing),
                  lineWidth: max(1, L.len(0.35)))
     }
 
@@ -233,12 +258,19 @@ struct GameView: View {
             Spacer()
 
             HStack {
-                Text("\(m.target) GOL")
-                    .font(.system(size: 11, weight: .heavy)).tracking(2)
-                    .foregroundStyle(T.dim)
-                    .padding(.horizontal, 12).padding(.vertical, 5)
-                    .background(T.bg.opacity(0.5), in: Capsule())
-                    .overlay(Capsule().stroke(T.line))
+                Group {
+                    if m.halfAt > 0 {
+                        (Text("\(m.halfAt)").foregroundColor(T.gold)
+                         + Text(" DEVRE · \(m.target) GOL"))
+                    } else {
+                        Text("\(m.target) GOL")
+                    }
+                }
+                .font(.system(size: 11, weight: .heavy)).tracking(2)
+                .foregroundStyle(T.dim)
+                .padding(.horizontal, 12).padding(.vertical, 5)
+                .background(T.bg.opacity(0.5), in: Capsule())
+                .overlay(Capsule().stroke(T.line))
                 Spacer()
                 if m.mode == .online {
                     Text(m.ping.map { "\($0) ms" } ?? "—")
@@ -282,17 +314,66 @@ struct GameView: View {
     private var centerMessage: some View {
         Text(m.centerText)
             .font(.system(size: m.centerIsGoal ? 44 : 72, weight: .black, design: .rounded))
-            .foregroundStyle(m.centerIsGoal ? T.gold : .white)
-            .shadow(color: (m.centerIsGoal ? T.gold : T.me).opacity(0.7), radius: 22)
+            .foregroundStyle(m.centerIsGoal ? T.gold : T.txt)
+            // A halo in the rink's own colour keeps the countdown readable even
+            // when the puck happens to sit right behind it.
+            .shadow(color: T.bg, radius: 14)
             .opacity(m.centerText.isEmpty ? 0 : 1)
             .animation(.easeOut(duration: 0.18), value: m.centerText)
             .allowsHitTesting(false)
     }
 
+    /// Both players sit on opposite sides of the table, so the notice is printed
+    /// twice — once the right way up for each of them.
+    private var halftime: some View {
+        ZStack {
+            Rectangle().fill(.ultraThinMaterial).ignoresSafeArea()
+            Rectangle().fill(T.bg.opacity(0.86)).ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                halfNotice.rotationEffect(.degrees(180))
+                Spacer(minLength: 12)
+
+                VStack(spacing: 12) {
+                    TurnPhoneIcon()
+                        .frame(width: 112, height: 112)
+                    Text("\(m.scoreMe) – \(m.scoreFoe)")
+                        .font(.system(size: 42, weight: .black, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(T.txt)
+                    Text("Alt taraf yukarı, üst taraf aşağı.\nBöylece herkes ekranın iki yanını da kullanır.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(T.dim)
+                        .multilineTextAlignment(.center)
+                    Button("Çevirdik, Devam") { m.continueHalftime() }
+                        .buttonStyle(PrimaryButton())
+                        .padding(.top, 4)
+                }
+                .frame(maxWidth: 330)
+
+                Spacer(minLength: 12)
+                halfNotice
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 18)
+        }
+    }
+
+    private var halfNotice: some View {
+        VStack(spacing: 4) {
+            Text("DEVRE")
+                .font(.system(size: 26, weight: .black, design: .rounded)).tracking(6)
+                .foregroundStyle(T.gold)
+            Text("Telefonu 180° çevirin")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(T.txt)
+        }
+    }
+
     private var overlay: some View {
         ZStack {
             Rectangle().fill(.ultraThinMaterial).ignoresSafeArea()
-            Rectangle().fill(T.bg.opacity(0.7)).ignoresSafeArea()
+            Rectangle().fill(T.bg.opacity(0.86)).ignoresSafeArea()
             VStack(spacing: 14) {
                 Text(m.overlayTitle)
                     .font(.system(size: 30, weight: .black, design: .rounded))
@@ -308,5 +389,47 @@ struct GameView: View {
             .padding(28)
             .frame(maxWidth: 360)
         }
+    }
+}
+
+
+/// A phone turning end over end, drawn with two arcs and a rounded body.
+struct TurnPhoneIcon: View {
+    @State private var turned = false
+
+    var body: some View {
+        Canvas { ctx, size in
+            let s = min(size.width, size.height) / 120
+            func P(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: x * s, y: y * s) }
+
+            var body = Path(roundedRect: CGRect(x: 42 * s, y: 26 * s, width: 36 * s, height: 68 * s),
+                            cornerRadius: 8 * s, style: .continuous)
+            ctx.stroke(body, with: .color(T.txt), lineWidth: 4 * s)
+            body = Path { p in
+                p.move(to: P(53, 35)); p.addLine(to: P(67, 35))
+            }
+            ctx.stroke(body, with: .color(T.txt),
+                       style: StrokeStyle(lineWidth: 3 * s, lineCap: .round))
+            ctx.fill(Path(ellipseIn: CGRect(x: 57 * s, y: 83 * s, width: 6 * s, height: 6 * s)),
+                     with: .color(T.txt))
+
+            var arcs = Path()
+            arcs.addArc(center: P(60, 60), radius: 38 * s,
+                        startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+            arcs.move(to: P(98, 60))
+            arcs.addArc(center: P(60, 60), radius: 38 * s,
+                        startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
+            ctx.stroke(arcs, with: .color(T.gold),
+                       style: StrokeStyle(lineWidth: 4 * s, lineCap: .round))
+
+            var tips = Path()
+            tips.move(to: P(51, 15)); tips.addLine(to: P(60, 22)); tips.addLine(to: P(51, 29))
+            tips.move(to: P(69, 105)); tips.addLine(to: P(60, 98)); tips.addLine(to: P(69, 91))
+            ctx.stroke(tips, with: .color(T.gold),
+                       style: StrokeStyle(lineWidth: 4 * s, lineCap: .round, lineJoin: .round))
+        }
+        .rotationEffect(.degrees(turned ? 180 : 0))
+        .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: turned)
+        .onAppear { turned = true }
     }
 }

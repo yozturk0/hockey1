@@ -42,6 +42,8 @@
       <span>Adın</span>
       <input id="i-name" type="text" maxlength="14" placeholder="Oyuncu" autocomplete="off" autocapitalize="words" spellcheck="false">
     </label>
+
+    <button class="btn btn-ghost" id="b-settings">⚙️ Ayarlar — tema, sopa boyutu</button>
   </div>
   <footer class="foot"><span id="conn-dot" class="dot"></span><span id="conn-txt">Bağlanıyor…</span></footer>
 </section>
@@ -124,8 +126,63 @@
         <button class="chip" data-v="8">8</button>
         <input class="chip chip-input" id="t-local" type="number" inputmode="numeric" min="1" max="15" placeholder="…">
       </div>
+      <div class="plan" id="plan-local">
+        <span class="plan-half"><b>4</b> golde <i>devre</i></span>
+        <span class="plan-arrow">→</span>
+        <span class="plan-end"><b>7</b> golde <i>biter</i></span>
+      </div>
+      <p class="hint">Devrede telefonu 180° çevirirsiniz — herkes bir yarıyı da diğer taraftan oynar.</p>
     </div>
     <button class="btn btn-primary" id="b-local-start">Başlat</button>
+    <button class="btn btn-ghost" data-back="s-menu">← Geri</button>
+  </div>
+</section>
+
+<!-- ============ AYARLAR ============ -->
+<section class="screen hidden" id="s-set">
+  <div class="stack">
+    <h2 class="title">Ayarlar</h2>
+
+    <div class="card">
+      <h3>Zemin</h3>
+      <p class="hint">Çocuklar için açık ve sade zeminler daha rahat görünür.</p>
+      <div class="chips chips-wrap" id="pick-theme">
+        <button class="chip chip-theme" data-v="krem">Krem</button>
+        <button class="chip chip-theme" data-v="buz">Buz</button>
+        <button class="chip chip-theme" data-v="cim">Çim</button>
+        <button class="chip chip-theme" data-v="gece">Gece</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Top Rengi</h3>
+      <p class="hint">Tema, sahaya uygun olanı seçer.</p>
+      <div class="chips chips-wrap" id="pick-puck"></div>
+    </div>
+
+    <div class="card">
+      <h3>Sopa Boyutu</h3>
+      <p class="hint">Parmağın sopayı kapatıyorsa küçült.</p>
+      <div class="chips" id="pick-pad">
+        <button class="chip" data-v="0">Mini</button>
+        <button class="chip" data-v="1">Küçük</button>
+        <button class="chip" data-v="2">Orta</button>
+        <button class="chip" data-v="3">Büyük</button>
+      </div>
+
+      <h3 style="margin-top:6px">Parmak Boşluğu</h3>
+      <p class="hint">Sopa parmağının biraz ilerisinde durur; böylece topu ve sopayı görürsün.</p>
+      <div class="chips" id="pick-grip">
+        <button class="chip" data-v="0">Kapalı</button>
+        <button class="chip" data-v="1">Az</button>
+        <button class="chip" data-v="2">Orta</button>
+        <button class="chip" data-v="3">Çok</button>
+      </div>
+
+      <canvas class="preview" id="pv" width="600" height="330"></canvas>
+      <p class="hint" id="pv-hint">Önizlemede parmağını sürükleyerek dene.</p>
+    </div>
+
     <button class="btn btn-ghost" data-back="s-menu">← Geri</button>
   </div>
 </section>
@@ -140,7 +197,7 @@
       <div class="hud-score" id="sc-foe">0</div>
     </div>
     <div class="hud-mid">
-      <div class="hud-target"><span id="hud-target">7</span> GOL</div>
+      <div class="hud-target" id="hud-target">7 GOL</div>
       <div class="hud-net"><span id="hud-ping">—</span></div>
     </div>
     <div class="hud-bot">
@@ -151,6 +208,35 @@
   </div>
 
   <div class="center-msg hidden" id="cmsg"><span id="cmsg-txt"></span></div>
+
+  <div class="overlay half hidden" id="half">
+    <div class="half-msg half-flip">
+      <b>DEVRE</b>
+      <span>Telefonu 180° çevirin</span>
+    </div>
+
+    <div class="half-core">
+      <div class="half-icon" aria-hidden="true">
+        <svg viewBox="0 0 120 120">
+          <rect class="hi-phone" x="42" y="26" width="36" height="68" rx="8"/>
+          <line class="hi-line" x1="53" y1="35" x2="67" y2="35"/>
+          <circle class="hi-dot" cx="60" cy="86" r="3"/>
+          <path class="hi-arc" d="M22 60a38 38 0 0 1 38-38"/>
+          <path class="hi-arc" d="M98 60a38 38 0 0 1-38 38"/>
+          <path class="hi-tip" d="M60 22l-9-7 9-7"/>
+          <path class="hi-tip" d="M60 98l9 7-9 7"/>
+        </svg>
+      </div>
+      <div class="half-score" id="half-score">0 – 0</div>
+      <p class="half-note">Alt taraf yukarı, üst taraf aşağı.<br>Böylece herkes ekranın iki yanını da kullanır.</p>
+      <button class="btn btn-primary" id="b-half">Çevirdik, Devam</button>
+    </div>
+
+    <div class="half-msg">
+      <b>DEVRE</b>
+      <span>Telefonu 180° çevirin</span>
+    </div>
+  </div>
 
   <div class="overlay hidden" id="ovl">
     <div class="ovl-card">
