@@ -35,9 +35,30 @@ const PAD_TRANSFER = 0.22;      // mallet speed injected along the contact norma
 const PAD_DRAG = 0.12;          // ...and sideways, so a brushed puck curls away
 
 const TICK = 1 / 60;
-const COUNTDOWN_START = 3000;
-const COUNTDOWN_GOAL = 1600;
+/* One countdown length for every restart - kickoff, goals and half time all
+   run the same 3 - 2 - 1. 2.5 s is long enough to read all three digits and
+   short enough that nobody drums their fingers. */
+const COUNTDOWN_MS = 2500;
+const COUNTDOWN_STEPS = 3;
 const STALL_LIMIT = 5000;       // ms of a near-motionless puck before we nudge it
+
+/* ---------------- lucky mode ---------------- */
+/* "Sansli" sprinkles small, short-lived twists over an otherwise normal match.
+   Everything here is deliberately mild: a twist should change how a rally
+   feels, never decide who wins it. */
+const MODE_CLASSIC = 'klasik';
+const MODE_LUCKY = 'sansli';
+
+const LUCKY_FIRST_MS = 4500;    // first twist of a rally
+const LUCKY_GAP_MS = 6500;      // ...then one every 6.5 - 9 s
+const LUCKY_JITTER_MS = 2500;
+const LUCKY_DUR_MS = 6000;      // how long one twist lasts
+const LUCKY_GROW = 1.18;        // +18 % mallet
+const LUCKY_SHRINK = 0.85;      // -15 % mallet
+const LUCKY_ICE_FAST = 0.972;   // slick ice: the puck keeps rolling
+const LUCKY_ICE_SLOW = 0.900;   // sticky ice: it dies sooner
+/* Effect codes carried by a type-3 event. */
+const FX_GROW = 0, FX_SHRINK = 1, FX_FAST = 2, FX_SLOW = 3;
 
 const ST = { LOBBY: 0, COUNTDOWN: 1, PLAYING: 2, PAUSED: 3, OVER: 4, HALFTIME: 5 };
 
@@ -50,19 +71,27 @@ function halftimeFor(target) {
   return target >= 3 ? Math.ceil(target / 2) : 0;
 }
 
-function makePaddle(side) {
+/* Which digit a countdown of `ms` should be showing. Always 3 -> 2 -> 1,
+   whatever the countdown's total length happens to be. */
+function countdownDigit(ms, total = COUNTDOWN_MS) {
+  const step = total / COUNTDOWN_STEPS;
+  return clamp(Math.ceil(ms / step), 1, COUNTDOWN_STEPS);
+}
+
+function makePaddle(side, r) {
   // A sits in the bottom half, B in the top half.
   const y = side === 'a' ? H * 0.78 : H * 0.22;
-  return { x: W / 2, y, tx: W / 2, ty: y, vx: 0, vy: 0 };
+  return { x: W / 2, y, tx: W / 2, ty: y, vx: 0, vy: 0, r, scale: 1, fxMs: 0 };
 }
 
 class Game {
   /* `opts` may be a plain target score (legacy) or
-     { target, padR, halftime }. */
+     { target, padR, halftime, mode }. */
   constructor(opts = 7) {
     const o = (typeof opts === 'number' || opts == null) ? { target: opts } : opts;
     this.target = clamp(Math.round(+o.target || 7), 1, 15);
     this.padR = clamp(+o.padR || PAD_R, PAD_R_MIN, PAD_R_MAX);
+    this.mode = o.mode === MODE_LUCKY ? MODE_LUCKY : MODE_CLASSIC;
     this.halfAt = o.halftime ? halftimeFor(this.target) : 0;
     this.halfDone = false;
     this.scoreA = 0;
@@ -73,9 +102,13 @@ class Game {
     this.tick = 0;
     this.events = [];
     this.stallMs = 0;
-    this.padA = makePaddle('a');
-    this.padB = makePaddle('b');
+    this.padA = makePaddle('a', this.padR);
+    this.padB = makePaddle('b', this.padR);
     this.puck = { x: W / 2, y: H / 2, vx: 0, vy: 0 };
+    this.luckyMs = LUCKY_FIRST_MS;
+    this.luckyBag = [];
+    this.iceMs = 0;
+    this.iceFriction = FRICTION;
     this.resetPuck(Math.random() < 0.5 ? 1 : -1);
   }
 
@@ -83,6 +116,16 @@ class Game {
   setTarget(v) {
     this.target = clamp(Math.round(+v) || 7, 1, 15);
     if (this.halfAt) this.halfAt = halftimeFor(this.target);
+  }
+
+  setMode(v) {
+    this.mode = v === MODE_LUCKY ? MODE_LUCKY : MODE_CLASSIC;
+    if (this.mode === MODE_CLASSIC) this.clearLucky();
+  }
+
+  /* Turn the half-time break on or off; only meaningful before kickoff. */
+  setHalftime(on) {
+    this.halfAt = on ? halftimeFor(this.target) : 0;
   }
 
   resetPuck(dir) {
@@ -96,14 +139,25 @@ class Game {
   }
 
   resetPaddles() {
-    this.padA = makePaddle('a');
-    this.padB = makePaddle('b');
+    this.padA = makePaddle('a', this.padR);
+    this.padB = makePaddle('b', this.padR);
   }
 
-  /* Called when both players are present. */
-  startCountdown(ms = COUNTDOWN_START) {
+  /* Every rally starts from a clean slate, so a twist can never carry a
+     scoring advantage over into the next face-off. */
+  clearLucky() {
+    this.iceMs = 0;
+    this.iceFriction = FRICTION;
+    this.luckyMs = LUCKY_FIRST_MS;
+    for (const p of [this.padA, this.padB]) { p.scale = 1; p.r = this.padR; p.fxMs = 0; }
+  }
+
+  /* Called when both players are present, and after every goal. */
+  startCountdown(ms = COUNTDOWN_MS) {
     this.state = ST.COUNTDOWN;
     this.countdown = ms;
+    this.resetPaddles();
+    this.clearLucky();
   }
 
   pause() {
@@ -113,12 +167,12 @@ class Game {
   }
 
   resume() {
-    if (this.state === ST.PAUSED) this.startCountdown(COUNTDOWN_START);
+    if (this.state === ST.PAUSED) this.startCountdown();
   }
 
-  /* Players have turned the phone around; kick the second half off. */
+  /* Both players are back from the break; kick the second half off. */
   resumeHalftime() {
-    if (this.state === ST.HALFTIME) this.startCountdown(COUNTDOWN_START);
+    if (this.state === ST.HALFTIME) this.startCountdown();
   }
 
   restart() {
@@ -126,15 +180,17 @@ class Game {
     this.scoreB = 0;
     this.winner = null;
     this.halfDone = false;
-    this.resetPaddles();
     this.resetPuck(Math.random() < 0.5 ? 1 : -1);
-    this.startCountdown(COUNTDOWN_START);
+    this.startCountdown();
   }
 
   /* Target position from a client, already in canonical field coordinates. */
   setInput(side, x, y) {
+    // Mallets are locked while the countdown runs; accepting input here would
+    // let a player creep across the rink before the puck is live.
+    if (this.state !== ST.PLAYING) return;
     const p = side === 'a' ? this.padA : this.padB;
-    const r = this.padR;
+    const r = p.r;
     p.tx = clamp(x, r, W - r);
     p.ty = side === 'a'
       ? clamp(y, H / 2 + r, H - r)
@@ -150,9 +206,11 @@ class Game {
 
     if (this.state === ST.COUNTDOWN) {
       this.countdown -= dt * 1000;
-      // Paddles stay live during the countdown so players can settle in.
-      this.movePaddle(this.padA, dt);
-      this.movePaddle(this.padB, dt);
+      // Both mallets are frozen on their spots. Letting them slide about
+      // during "3 - 2 - 1" reads as lag, and a mallet already at full tilt
+      // when the puck goes live is a free shot.
+      this.holdPaddle(this.padA);
+      this.holdPaddle(this.padB);
       if (this.countdown <= 0) {
         this.countdown = 0;
         this.state = ST.PLAYING;
@@ -162,9 +220,17 @@ class Game {
 
     if (this.state !== ST.PLAYING) return;
 
+    if (this.mode === MODE_LUCKY) this.luckyStep(dt);
     this.movePaddle(this.padA, dt);
     this.movePaddle(this.padB, dt);
     this.movePuck(dt);
+  }
+
+  holdPaddle(p) {
+    p.tx = p.x;
+    p.ty = p.y;
+    p.vx = 0;
+    p.vy = 0;
   }
 
   movePaddle(p, dt) {
@@ -184,6 +250,75 @@ class Game {
     p.x = nx;
     p.y = ny;
   }
+
+  /* ---------------- lucky mode ---------------- */
+
+  luckyStep(dt) {
+    const ms = dt * 1000;
+
+    for (const p of [this.padA, this.padB]) {
+      if (p.fxMs <= 0) continue;
+      p.fxMs -= ms;
+      if (p.fxMs <= 0) { p.fxMs = 0; this.scalePad(p, 1); }
+    }
+    if (this.iceMs > 0) {
+      this.iceMs -= ms;
+      if (this.iceMs <= 0) { this.iceMs = 0; this.iceFriction = FRICTION; }
+    }
+
+    this.luckyMs -= ms;
+    if (this.luckyMs <= 0) {
+      this.luckyMs = LUCKY_GAP_MS + Math.random() * LUCKY_JITTER_MS;
+      this.rollLucky();
+    }
+  }
+
+  rollLucky() {
+    // Roughly one twist in three re-surfaces the ice, which hits both players
+    // equally. The rest are personal and come out of a shuffled bag, so over
+    // every four of them each player gets one bigger and one smaller mallet.
+    if (Math.random() < 0.34) {
+      const fast = Math.random() < 0.5;
+      this.iceFriction = fast ? LUCKY_ICE_FAST : LUCKY_ICE_SLOW;
+      this.iceMs = LUCKY_DUR_MS;
+      this.ev(3, this.puck.x, this.puck.y, fast ? FX_FAST : FX_SLOW);
+      return;
+    }
+
+    if (!this.luckyBag.length) {
+      this.luckyBag = [['a', FX_GROW], ['a', FX_SHRINK], ['b', FX_GROW], ['b', FX_SHRINK]];
+      for (let i = this.luckyBag.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const t = this.luckyBag[i]; this.luckyBag[i] = this.luckyBag[j]; this.luckyBag[j] = t;
+      }
+    }
+    const [side, kind] = this.luckyBag.pop();
+    const p = side === 'a' ? this.padA : this.padB;
+    this.scalePad(p, kind === FX_GROW ? LUCKY_GROW : LUCKY_SHRINK);
+    p.fxMs = LUCKY_DUR_MS;
+    this.ev(3, p.x, p.y, kind);
+  }
+
+  /* Resize a mallet and pull it back inside its own half, since the legal
+     area shrinks and grows with the radius. */
+  scalePad(p, scale) {
+    p.scale = scale;
+    p.r = clamp(this.padR * scale, PAD_R_MIN, PAD_R_MAX);
+    const isA = p === this.padA;
+    const r = p.r;
+    const lo = isA ? H / 2 + r : r;
+    const hi = isA ? H - r : H / 2 - r;
+    p.x = clamp(p.x, r, W - r);
+    p.y = clamp(p.y, lo, hi);
+    p.tx = clamp(p.tx, r, W - r);
+    p.ty = clamp(p.ty, lo, hi);
+  }
+
+  frictionNow() {
+    return this.iceMs > 0 ? this.iceFriction : FRICTION;
+  }
+
+  /* ---------------- puck ---------------- */
 
   movePuck(dt) {
     const k = this.puck;
@@ -236,7 +371,7 @@ class Game {
     }
 
     // Friction + speed clamp
-    const f = Math.pow(FRICTION, dt);
+    const f = Math.pow(this.frictionNow(), dt);
     k.vx *= f;
     k.vy *= f;
     const sp = Math.hypot(k.vx, k.vy);
@@ -281,7 +416,7 @@ class Game {
     const dx = k.x - p.x;
     const dy = k.y - p.y;
     let dist = Math.hypot(dx, dy);
-    const min = PUCK_R + this.padR;
+    const min = PUCK_R + p.r;
     if (dist >= min) return;
     if (dist === 0) { dist = 0.0001; }
 
@@ -334,11 +469,12 @@ class Game {
   score(side) {
     if (side === 'a') this.scoreA++; else this.scoreB++;
     this.ev(2, W / 2, side === 'a' ? 0 : H, side === 'a' ? 0 : 1);
-    this.resetPaddles();
 
     if (this.scoreA >= this.target || this.scoreB >= this.target) {
       this.winner = this.scoreA > this.scoreB ? 'a' : 'b';
       this.state = ST.OVER;
+      this.resetPaddles();
+      this.clearLucky();
       this.puck.x = W / 2; this.puck.y = H / 2;
       this.puck.vx = 0; this.puck.vy = 0;
       return;
@@ -347,15 +483,17 @@ class Game {
     // Conceding side gets the puck: A defends y=H, B defends y=0.
     this.resetPuck(side === 'a' ? -1 : 1);
 
-    // Half time: freeze here until the players say they have turned the phone.
+    // Half time: freeze here until both players say they are ready.
     if (this.halfAt && !this.halfDone &&
         Math.max(this.scoreA, this.scoreB) >= this.halfAt) {
       this.halfDone = true;
       this.state = ST.HALFTIME;
+      this.resetPaddles();
+      this.clearLucky();
       return;
     }
 
-    this.startCountdown(COUNTDOWN_GOAL);
+    this.startCountdown();
   }
 
   /* Serialize from `side`'s point of view: that player is ALWAYS at the bottom.
@@ -378,6 +516,9 @@ class Game {
       p: [r2(fx(this.puck.x)), r2(fy(this.puck.y)), r2(fv(this.puck.vx)), r2(fv(this.puck.vy))],
       m: [r2(fx(me.x)), r2(fy(me.y))],
       o: [r2(fx(foe.x)), r2(fy(foe.y))],
+      // Mallet radii travel with every frame: in lucky mode they change mid-rally.
+      rm: r2(me.r),
+      ro: r2(foe.r),
       sm: side === 'a' ? this.scoreA : this.scoreB,
       so: side === 'a' ? this.scoreB : this.scoreA,
       w: this.winner === null ? null : (this.winner === side ? 1 : 0),
@@ -395,11 +536,13 @@ class Game {
 }
 
 return {
-  Game, ST, halftimeFor,
+  Game, ST, halftimeFor, countdownDigit,
+  MODES: { CLASSIC: MODE_CLASSIC, LUCKY: MODE_LUCKY },
+  FX: { GROW: FX_GROW, SHRINK: FX_SHRINK, FAST: FX_FAST, SLOW: FX_SLOW },
   CONST: {
     W, H, PUCK_R, PAD_R, PAD_R_MIN, PAD_R_MAX,
     GOAL_W, GX0, GX1, POST_R, TICK,
-    PUCK_MAX, PAD_MAX_SPEED,
+    PUCK_MAX, PAD_MAX_SPEED, COUNTDOWN_MS, COUNTDOWN_STEPS,
   },
 };
 }));

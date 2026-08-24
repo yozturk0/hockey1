@@ -169,9 +169,9 @@ struct GameView: View {
             ctx.fill(circle(L.px(t.x), L.py(t.y), r), with: .color(beam.opacity(f * 0.24)))
         }
 
-        drawPaddle(ctx, L, at: m.world.foe, color: T.foe,
+        drawPaddle(ctx, L, at: m.world.foe, r: m.rFoe, color: T.foe,
                    dim: m.mode == .online && !m.foePresent)
-        drawPaddle(ctx, L, at: m.world.me, color: T.me, dim: false)
+        drawPaddle(ctx, L, at: m.world.me, r: m.rMe, color: T.me, dim: false)
         drawPuck(ctx, L, at: m.world.puck)
     }
 
@@ -219,9 +219,9 @@ struct GameView: View {
     }
 
     private func drawPaddle(_ ctx: GraphicsContext, _ L: RinkLayout,
-                            at v: Vec, color: Color, dim: Bool) {
+                            at v: Vec, r radius: Double, color: Color, dim: Bool) {
         let p = L.point(v)
-        let r = L.len(m.padR)
+        let r = L.len(radius)
         var c = ctx
         c.opacity = dim ? 0.55 : 1
         drawShadow(c, p, r)
@@ -245,10 +245,10 @@ struct GameView: View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Text(m.mode == .local ? "OYUNCU 2" : m.foeName.uppercased())
-                    .font(.system(size: 12, weight: .bold)).tracking(1)
+                    .font(.system(size: sz(12), weight: .bold)).tracking(1)
                     .foregroundStyle(T.dim)
                 Text("\(m.scoreFoe)")
-                    .font(.system(size: 34, weight: .black, design: .rounded))
+                    .font(.system(size: sz(34), weight: .black, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(T.foe)
             }
@@ -259,14 +259,19 @@ struct GameView: View {
 
             HStack {
                 Group {
-                    if m.halfAt > 0 {
+                    if m.gameMode == .lucky && m.halfAt > 0 {
+                        (Text("ŞANSLI · ") + Text("\(m.halfAt)").foregroundColor(T.gold)
+                         + Text(" DEVRE · \(m.target) GOL"))
+                    } else if m.gameMode == .lucky {
+                        Text("ŞANSLI · \(m.target) GOL")
+                    } else if m.halfAt > 0 {
                         (Text("\(m.halfAt)").foregroundColor(T.gold)
                          + Text(" DEVRE · \(m.target) GOL"))
                     } else {
                         Text("\(m.target) GOL")
                     }
                 }
-                .font(.system(size: 11, weight: .heavy)).tracking(2)
+                .font(.system(size: sz(11), weight: .heavy)).tracking(2)
                 .foregroundStyle(T.dim)
                 .padding(.horizontal, 12).padding(.vertical, 5)
                 .background(T.bg.opacity(0.5), in: Capsule())
@@ -274,23 +279,26 @@ struct GameView: View {
                 Spacer()
                 if m.mode == .online {
                     Text(m.ping.map { "\($0) ms" } ?? "—")
-                        .font(.system(size: 11, weight: .bold)).monospacedDigit()
+                        .font(.system(size: sz(11), weight: .bold)).monospacedDigit()
                         .foregroundStyle((m.ping ?? 0) > 140 ? T.foe : T.dim)
                         .padding(.horizontal, 12).padding(.vertical, 5)
                         .background(T.bg.opacity(0.5), in: Capsule())
                         .overlay(Capsule().stroke(T.line))
                 }
             }
+            // The countdown lands right on top of this strip — let it through.
+            .opacity(m.centerText.isEmpty ? 1 : 0)
+            .animation(.easeOut(duration: 0.18), value: m.centerText.isEmpty)
 
             Spacer()
 
             HStack(spacing: 12) {
                 Text("\(m.scoreMe)")
-                    .font(.system(size: 34, weight: .black, design: .rounded))
+                    .font(.system(size: sz(34), weight: .black, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(T.me)
                 Text(m.mode == .local ? "OYUNCU 1" : "SEN")
-                    .font(.system(size: 12, weight: .bold)).tracking(1)
+                    .font(.system(size: sz(12), weight: .bold)).tracking(1)
                     .foregroundStyle(T.dim)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -301,7 +309,7 @@ struct GameView: View {
         .overlay(alignment: .topTrailing) {
             Button { m.exitGame() } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: sz(15), weight: .bold))
                     .foregroundStyle(T.dim)
                     .frame(width: 40, height: 40)
                     .background(T.bg.opacity(0.6), in: Circle())
@@ -313,7 +321,7 @@ struct GameView: View {
 
     private var centerMessage: some View {
         Text(m.centerText)
-            .font(.system(size: m.centerIsGoal ? 44 : 72, weight: .black, design: .rounded))
+            .font(.system(size: sz(m.centerIsGoal ? 44 : 72), weight: .black, design: .rounded))
             .foregroundStyle(m.centerIsGoal ? T.gold : T.txt)
             // A halo in the rink's own colour keeps the countdown readable even
             // when the puck happens to sit right behind it.
@@ -323,36 +331,56 @@ struct GameView: View {
             .allowsHitTesting(false)
     }
 
-    /// Both players sit on opposite sides of the table, so the notice is printed
-    /// twice — once the right way up for each of them.
+    /// On one shared phone both players sit on opposite sides of the table, so
+    /// the notice is printed twice — once the right way up for each of them.
+    /// Online there is no phone to turn, so one upright notice is all it needs.
     private var halftime: some View {
-        ZStack {
+        let turnPhone = m.mode == .local
+        return ZStack {
             Rectangle().fill(.ultraThinMaterial).ignoresSafeArea()
             Rectangle().fill(T.bg.opacity(0.86)).ignoresSafeArea()
 
             VStack(spacing: 0) {
-                halfNotice.rotationEffect(.degrees(180))
-                Spacer(minLength: 12)
+                if turnPhone {
+                    halfNotice.rotationEffect(.degrees(180))
+                    Spacer(minLength: 12)
+                }
 
                 VStack(spacing: 12) {
-                    TurnPhoneIcon()
-                        .frame(width: 112, height: 112)
+                    if turnPhone {
+                        TurnPhoneIcon().frame(width: 112, height: 112)
+                    } else {
+                        Text("DEVRE")
+                            .font(.system(size: sz(26), weight: .black, design: .rounded))
+                            .tracking(6)
+                            .foregroundStyle(T.gold)
+                    }
                     Text("\(m.scoreMe) – \(m.scoreFoe)")
-                        .font(.system(size: 42, weight: .black, design: .rounded))
+                        .font(.system(size: sz(42), weight: .black, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(T.txt)
-                    Text("Alt taraf yukarı, üst taraf aşağı.\nBöylece herkes ekranın iki yanını da kullanır.")
-                        .font(.system(size: 13))
+                    Text(turnPhone
+                         ? "Alt taraf yukarı, üst taraf aşağı.\nBöylece herkes ekranın iki yanını da kullanır."
+                         : "İkiniz de hazır deyince ikinci yarı başlar.")
+                        .font(.system(size: sz(13)))
                         .foregroundStyle(T.dim)
                         .multilineTextAlignment(.center)
-                    Button("Çevirdik, Devam") { m.continueHalftime() }
+                    Button(turnPhone ? "Çevirdik, Devam" : "Hazırım") { m.continueHalftime() }
                         .buttonStyle(PrimaryButton())
+                        .disabled(!turnPhone && m.halfReady)
+                        .opacity(!turnPhone && m.halfReady ? 0.5 : 1)
                         .padding(.top, 4)
+                    if !turnPhone && m.halfReady && !m.foeReady {
+                        Text("Rakip bekleniyor…")
+                            .font(.system(size: sz(13))).foregroundStyle(T.dim)
+                    }
                 }
-                .frame(maxWidth: 330)
+                .frame(maxWidth: Device.isPad ? 400 : 330)
 
-                Spacer(minLength: 12)
-                halfNotice
+                if turnPhone {
+                    Spacer(minLength: 12)
+                    halfNotice
+                }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 18)
@@ -362,10 +390,10 @@ struct GameView: View {
     private var halfNotice: some View {
         VStack(spacing: 4) {
             Text("DEVRE")
-                .font(.system(size: 26, weight: .black, design: .rounded)).tracking(6)
+                .font(.system(size: sz(26), weight: .black, design: .rounded)).tracking(6)
                 .foregroundStyle(T.gold)
-            Text("Telefonu 180° çevirin")
-                .font(.system(size: 15, weight: .bold))
+            Text("\(Device.itAccCap) 180° çevirin")
+                .font(.system(size: sz(15), weight: .bold))
                 .foregroundStyle(T.txt)
         }
     }
@@ -376,18 +404,18 @@ struct GameView: View {
             Rectangle().fill(T.bg.opacity(0.86)).ignoresSafeArea()
             VStack(spacing: 14) {
                 Text(m.overlayTitle)
-                    .font(.system(size: 30, weight: .black, design: .rounded))
+                    .font(.system(size: sz(30), weight: .black, design: .rounded))
                     .foregroundStyle(m.overlayWin ? T.me : T.foe)
                     .multilineTextAlignment(.center)
                 Text("\(m.scoreMe) – \(m.scoreFoe)")
-                    .font(.system(size: 52, weight: .black, design: .rounded))
+                    .font(.system(size: sz(52), weight: .black, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(T.txt)
                 Button("Tekrar Oyna") { m.playAgain() }.buttonStyle(PrimaryButton())
                 Button("Ana Menü") { m.exitGame() }.buttonStyle(GhostButton())
             }
             .padding(28)
-            .frame(maxWidth: 360)
+            .frame(maxWidth: Device.isPad ? 430 : 360)
         }
     }
 }

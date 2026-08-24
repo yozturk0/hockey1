@@ -3,8 +3,8 @@
 (function () {
 'use strict';
 
-const { Game, ST, CONST, halftimeFor } = window.AHEngine;
-const { W, H, PUCK_R, PAD_R, GX0, GX1, PUCK_MAX, PAD_MAX_SPEED } = CONST;
+const { Game, ST, CONST, halftimeFor, countdownDigit, MODES, FX } = window.AHEngine;
+const { W, H, PUCK_R, GX0, GX1, PUCK_MAX, PAD_MAX_SPEED } = CONST;
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
@@ -18,6 +18,7 @@ const PAD_NAMES = ['Mini', 'Küçük', 'Orta', 'Büyük'];
 /* How far ahead of the fingertip the mallet sits, in field units. */
 const GRIPS = [0, 6, 10, 15];
 const THEMES = ['krem', 'buz', 'cim', 'gece'];
+const MODE_KEYS = [MODES.CLASSIC, MODES.LUCKY];
 
 /* Puck colours. `g` is the highlight -> body -> rim gradient; `rgb` seeds the
    motion trail when nobody has struck the puck yet. "tema" keeps whatever the
@@ -40,6 +41,9 @@ const Cfg = {
   puck: 'tema',
   pad: 1,
   grip: 2,      // a fingertip is ~6 units across, so 10 clears the mallet
+  /* Last match rules, so the same two people do not re-pick them every time. */
+  mode: MODES.CLASSIC,
+  half: true,
 
   load() {
     try {
@@ -48,12 +52,15 @@ const Cfg = {
       if (PUCK_KEYS.indexOf(j.puck) >= 0) this.puck = j.puck;
       if (j.pad >= 0 && j.pad < PAD_SIZES.length) this.pad = j.pad | 0;
       if (j.grip >= 0 && j.grip < GRIPS.length) this.grip = j.grip | 0;
+      if (MODE_KEYS.indexOf(j.mode) >= 0) this.mode = j.mode;
+      if (typeof j.half === 'boolean') this.half = j.half;
     } catch (_) { /* first run, or storage blocked */ }
   },
   save() {
     try {
       localStorage.setItem('ah_cfg', JSON.stringify(
-        { theme: this.theme, puck: this.puck, pad: this.pad, grip: this.grip }));
+        { theme: this.theme, puck: this.puck, pad: this.pad, grip: this.grip,
+          mode: this.mode, half: this.half }));
     } catch (_) {}
   },
   padR() { return PAD_SIZES[this.pad]; },
@@ -144,7 +151,13 @@ const App = {
   side: 'a',
   code: null,
   target: 7,
-  padR: Cfg.padR(),    // radius the *engine in play* is using
+  padR: Cfg.padR(),    // base radius the *engine in play* is using
+  /* Live mallet radii. In lucky mode these drift away from padR mid-rally. */
+  rMe: Cfg.padR(),
+  rFoe: Cfg.padR(),
+  gameMode: MODES.CLASSIC,
+  halfAt: 0,           // goal count that triggers the break, 0 = no break
+  halfReady: false,    // online break: I have tapped "ready"
   myName: 'Oyuncu',
   foeName: 'Rakip',
   snap: null,
@@ -166,7 +179,6 @@ const R = {
   /* The motion beam is tinted by the mallet that last struck the puck, so you
      can read at a glance whose shot is in flight. */
   trailCol: null,
-  flash: 0,
   shake: 0,
 };
 
@@ -285,20 +297,24 @@ function onMessage(m) {
       App.side = m.side;
       App.code = m.code;
       App.target = m.target;
-      if (m.pad) App.padR = m.pad;
+      if (m.pad) { App.padR = m.pad; App.rMe = App.rFoe = m.pad; }
+      App.gameMode = m.mode || MODES.CLASSIC;
+      App.halfAt = m.half || 0;
+      App.halfReady = false;
       Net.wantRoom = m.code;
       $('lobby-code').textContent = m.code;
-      setHudTarget(m.target, 0);
-      syncChips('pick-lobby', 't-lobby', m.target);
-      $('pick-lobby').style.display = m.side === 'a' ? '' : 'none';
+      setHudTarget(m.target, App.halfAt, App.gameMode);
+      syncLobbyRules();
       if (current !== 's-game') show('s-lobby');
       break;
 
     case 'room': {
       App.target = m.target;
-      if (m.pad) App.padR = m.pad;
-      setHudTarget(m.target, 0);
-      syncChips('pick-lobby', 't-lobby', m.target);
+      if (m.pad) { App.padR = m.pad; App.rMe = App.rFoe = m.pad; }
+      App.gameMode = m.mode || MODES.CLASSIC;
+      App.halfAt = m.half || 0;
+      setHudTarget(m.target, App.halfAt, App.gameMode);
+      syncLobbyRules();
       const mine = App.side === 'a' ? m.names.a : m.names.b;
       const theirs = App.side === 'a' ? m.names.b : m.names.a;
       const theirsHere = App.side === 'a' ? m.b : m.a;
@@ -317,6 +333,12 @@ function onMessage(m) {
     case 'peer':
       if (m.on) { Snd.join(); toast('Rakip bağlandı!'); }
       else { toast('Rakip ayrıldı — bekleniyor…', 4000); }
+      break;
+
+    case 'hr':
+      // Half-time break: who has tapped "ready".
+      App.halfReady = App.side === 'a' ? m.a : m.b;
+      paintHalfWait(App.side === 'a' ? m.b : m.a);
       break;
 
     case 'err':
@@ -345,12 +367,16 @@ function handleSnapshot(s) {
   $('sc-me').textContent = s.sm;
   $('sc-foe').textContent = s.so;
 
+  // Lucky mode resizes mallets mid-rally, so the radii ride along with
+  // every frame instead of being fixed when the room was made.
+  if (s.rm) App.rMe = s.rm;
+  if (s.ro) App.rFoe = s.ro;
+
   // Events: identical audio cues on both clients, driven by the server.
   for (const e of s.e) {
     const type = e[0], ey = e[2], inten = e[3];
     if (type === 0) {
       Snd.hit(inten);
-      R.flash = 1;
       R.shake = Math.min(1, inten / PUCK_MAX) * 0.6;
       R.trailCol = ey >= H / 2 ? RGB.me : RGB.foe;
     }
@@ -361,13 +387,15 @@ function handleSnapshot(s) {
       R.shake = 1;
       centerMsg(mine ? 'GOL!' : 'Rakip Attı', 'goal', 1200);
     }
+    else if (type === 3) {
+      Snd.ui();
+      centerMsg(luckyText(e[3], ey >= H / 2, false), 'lucky', 1400);
+    }
   }
 
   // Countdown ticks
   if (s.st === ST.COUNTDOWN) {
-    const n = Math.ceil(s.cd / 1000);
-    if (n !== App.lastCd && n > 0) { App.lastCd = n; Snd.count(n); }
-    if (s.cd > 0 && R.flash === 0) centerMsg(String(Math.max(1, n)), '', 0);
+    paintCountdown(s.cd);
   } else if (App.lastState === ST.COUNTDOWN && s.st === ST.PLAYING) {
     App.lastCd = -1;
     centerMsg('BAŞLA!', '', 550);
@@ -377,12 +405,27 @@ function handleSnapshot(s) {
     hideMsgIfIdle();
   }
 
+  if (s.st === ST.HALFTIME && App.lastState !== ST.HALFTIME) enterHalftimeOnline(s);
+  if (s.st !== ST.HALFTIME && App.lastState === ST.HALFTIME) $('half').classList.add('hidden');
+
   if (s.st === ST.OVER && App.lastState !== ST.OVER) {
     showOver(s.w === 1, s.sm, s.so);
   }
   if (s.st !== ST.OVER && App.lastState === ST.OVER) hideOver();
 
   App.lastState = s.st;
+}
+
+/* What a lucky-mode twist should say. `mine` is true when the affected mallet
+   is the bottom one; in the same-device mode that is Oyuncu 1, not "you". */
+function luckyText(code, mine, local) {
+  const who = local ? (mine ? 'OYUNCU 1' : 'OYUNCU 2') : (mine ? 'SOPAN' : 'RAKİP');
+  switch (code) {
+    case FX.GROW:   return who + ' BÜYÜDÜ';
+    case FX.SHRINK: return who + ' KÜÇÜLDÜ';
+    case FX.FAST:   return 'BUZ KAYGAN';
+    default:        return 'BUZ AĞIR';
+  }
 }
 
 /* ============================ center message ============================ */
@@ -392,11 +435,29 @@ function centerMsg(txt, cls, ms) {
   const el = $('cmsg');
   $('cmsg-txt').textContent = txt;
   el.className = 'center-msg' + (cls ? ' ' + cls : '');
+  // The mid-rink HUD strip sits exactly where the countdown lands, so it
+  // steps aside while anything is being announced.
+  $('s-game').classList.add('msg');
   clearTimeout(msgTimer);
-  if (ms > 0) msgTimer = setTimeout(() => el.classList.add('hidden'), ms);
+  msgTimer = ms > 0 ? setTimeout(hideMsg, ms) : null;
+}
+function hideMsg() {
+  msgTimer = null;
+  $('cmsg').classList.add('hidden');
+  $('s-game').classList.remove('msg');
 }
 function hideMsgIfIdle() {
-  if (!msgTimer) $('cmsg').classList.add('hidden');
+  if (!msgTimer) hideMsg();
+}
+
+/* 3 - 2 - 1. The tick always sounds on the beat, but the digit waits for a
+   goal shout to finish before it takes over the middle of the rink. */
+function paintCountdown(ms) {
+  const n = countdownDigit(ms);
+  const changed = n !== App.lastCd;
+  if (changed) { App.lastCd = n; Snd.count(n); }
+  if (msgTimer) return;
+  if (changed || $('cmsg').classList.contains('hidden')) centerMsg(String(n), '', 0);
 }
 
 /* ============================ half time ============================ */
@@ -408,35 +469,74 @@ function setFlip(on) {
   pointers.clear();
 }
 
-function enterHalftime(g) {
+/* Two flavours of the same overlay: on one phone the players physically turn
+   it round, online they just take a breather on their own screens. */
+function openHalftime(score, turnPhone) {
   Snd.half();
-  $('half-score').textContent = `${g.scoreA} – ${g.scoreB}`;
-  $('cmsg').classList.add('hidden');
+  $('half-score').textContent = score;
+  hideMsg();
   clearTimeout(msgTimer); msgTimer = null;
+  $('half').classList.toggle('solo', !turnPhone);
+  $('half-top').classList.toggle('hidden', !turnPhone);
+  $('half-bot').classList.toggle('hidden', !turnPhone);
+  $('half-icon').classList.toggle('hidden', !turnPhone);
+  $('half-title').classList.toggle('hidden', turnPhone);
+  $('half-note').innerHTML = turnPhone
+    ? 'Alt taraf yukarı, üst taraf aşağı.<br>Böylece herkes ekranın iki yanını da kullanır.'
+    : 'İkiniz de hazır deyince ikinci yarı başlar.';
+  $('b-half').textContent = turnPhone ? 'Çevirdik, Devam' : 'Hazırım';
+  $('b-half').disabled = false;
+  $('half-wait').classList.add('hidden');
   $('half').classList.remove('hidden');
+}
+
+function enterHalftime(g) {
+  openHalftime(`${g.scoreA} – ${g.scoreB}`, true);
   // Turn the rink now, so what is on screen already matches the instruction.
   setFlip(!App.flip);
   myPad.x = myPad.tx = W / 2; myPad.y = myPad.ty = H * 0.78;
   foePad.x = foePad.tx = W / 2; foePad.y = foePad.ty = H * 0.22;
 }
 
+function enterHalftimeOnline(s) {
+  App.halfReady = false;
+  openHalftime(`${s.sm} – ${s.so}`, false);
+}
+
+/* Online break: once I have tapped, the button turns into a wait notice. */
+function paintHalfWait(foeReady) {
+  if ($('half').classList.contains('hidden')) return;
+  $('b-half').disabled = App.halfReady;
+  $('half-wait').classList.toggle('hidden', !App.halfReady || foeReady);
+}
+
 $('b-half').addEventListener('click', () => {
   Snd.ui();
-  $('half').classList.add('hidden');
   App.lastCd = -1;
+  if (App.mode === 'online') {
+    App.halfReady = true;
+    Net.send({ t: 'ready' });
+    paintHalfWait(false);
+    return;
+  }
+  $('half').classList.add('hidden');
   if (App.game) App.game.resumeHalftime();
 });
 
-/* "4 golde devre · 7 GOL" — always visible during a local match. */
-function setHudTarget(target, half) {
-  $('hud-target').innerHTML = half
-    ? `<b>${half}</b> DEVRE · ${target} GOL`
-    : `${target} GOL`;
+/* "ŞANSLI · 4 DEVRE · 7 GOL" — always visible during a match. */
+function setHudTarget(target, half, mode) {
+  const bits = [];
+  if (mode === MODES.LUCKY) bits.push('ŞANSLI');
+  if (half) bits.push(`<b>${half}</b> DEVRE`);
+  bits.push(`${target} GOL`);
+  $('hud-target').innerHTML = bits.join(' · ');
 }
 
-function updatePlan(target) {
-  const half = halftimeFor(target);
-  const el = $('plan-local');
+/* "4 golde devre → 7 golde biter" for whichever screen asked. */
+function updatePlan(id, target, halfOn) {
+  const half = halfOn ? halftimeFor(target) : 0;
+  const el = $(id);
+  if (!el) return;
   if (half) {
     el.style.display = '';
     el.querySelector('.plan-half b').textContent = half;
@@ -634,8 +734,8 @@ function drawPuck(p) {
   cx.stroke();
 }
 
-function drawPaddle(p, color, dim) {
-  const px = fx(p.x), py = fy(p.y), pr = fs(App.padR);
+function drawPaddle(p, color, radius, dim) {
+  const px = fx(p.x), py = fy(p.y), pr = fs(radius);
   drawShadow(px, py, pr);
   cx.save();
   cx.globalAlpha = dim ? 0.55 : 1;
@@ -670,16 +770,12 @@ function drawPaddle(p, color, dim) {
 const pointers = new Map();   // pointerId -> 'me' | 'foe'
 
 function clampMy(x, y) {
-  return {
-    x: clamp(x, App.padR, W - App.padR),
-    y: clamp(y, H / 2 + App.padR, H - App.padR),
-  };
+  const r = App.rMe;
+  return { x: clamp(x, r, W - r), y: clamp(y, H / 2 + r, H - r) };
 }
 function clampFoe(x, y) {
-  return {
-    x: clamp(x, App.padR, W - App.padR),
-    y: clamp(y, App.padR, H / 2 - App.padR),
-  };
+  const r = App.rFoe;
+  return { x: clamp(x, r, W - r), y: clamp(y, r, H / 2 - r) };
 }
 
 function pointerPos(e) {
@@ -767,16 +863,24 @@ function frame(now) {
 }
 
 function stepOnline(dt) {
-  stepPad(myPad, dt);
+  const s = App.snap;
+  // "3 - 2 - 1" means nobody moves. The server ignores input during the
+  // countdown; pinning the local copy too keeps the two views in step.
+  const frozen = !!s && s.st !== ST.PLAYING;
 
-  // Push my paddle target to the server at frame rate.
-  if (myPad.tx !== lastSent.x || myPad.ty !== lastSent.y) {
-    if (Net.send({ t: 'i', x: +myPad.tx.toFixed(2), y: +myPad.ty.toFixed(2) })) {
-      lastSent.x = myPad.tx; lastSent.y = myPad.ty;
+  if (frozen) {
+    if (s) { myPad.x = myPad.tx = s.m[0]; myPad.y = myPad.ty = s.m[1]; }
+    lastSent = { x: -1, y: -1 };
+  } else {
+    stepPad(myPad, dt);
+    // Push my paddle target to the server at frame rate.
+    if (myPad.tx !== lastSent.x || myPad.ty !== lastSent.y) {
+      if (Net.send({ t: 'i', x: +myPad.tx.toFixed(2), y: +myPad.ty.toFixed(2) })) {
+        lastSent.x = myPad.tx; lastSent.y = myPad.ty;
+      }
     }
   }
 
-  const s = App.snap;
   if (!s) return;
 
   // Extrapolate the puck over the packet's age, then smooth out jitter.
@@ -802,6 +906,8 @@ function stepLocal(dt) {
   const g = App.game;
   if (!g) return;
 
+  // setInput is a no-op unless the puck is live, so the countdown freeze
+  // needs nothing special here.
   g.applyInput('a', myPad.tx, myPad.ty);
   g.setInput('b', foePad.tx, foePad.ty);
 
@@ -820,6 +926,9 @@ function stepLocal(dt) {
       Snd.goal(true);
       R.shake = 1;
       centerMsg(bottomScored ? 'OYUNCU 1' : 'OYUNCU 2', 'goal', 1200);
+    } else if (type === 3) {
+      Snd.ui();
+      centerMsg(luckyText(inten, ey >= H / 2, true), 'lucky', 1400);
     }
   }
   g.clearEvents();
@@ -827,8 +936,7 @@ function stepLocal(dt) {
   if (g.state === ST.HALFTIME && prevState !== ST.HALFTIME) {
     enterHalftime(g);
   } else if (g.state === ST.COUNTDOWN) {
-    const n = Math.ceil(g.countdown / 1000);
-    if (n !== App.lastCd && n > 0) { App.lastCd = n; Snd.count(n); centerMsg(String(n), '', 0); }
+    paintCountdown(g.countdown);
   } else if (prevState === ST.COUNTDOWN && g.state === ST.PLAYING) {
     App.lastCd = -1;
     centerMsg('BAŞLA!', '', 550);
@@ -842,6 +950,13 @@ function stepLocal(dt) {
   R.puck.x = g.puck.x; R.puck.y = g.puck.y;
   R.me.x = g.padA.x;   R.me.y = g.padA.y;
   R.foe.x = g.padB.x;  R.foe.y = g.padB.y;
+  App.rMe = g.padA.r;  App.rFoe = g.padB.r;
+  // The mallets sit on their spots through the countdown; keep the finger
+  // targets there too so nothing lurches when the puck goes live.
+  if (g.state !== ST.PLAYING) {
+    myPad.x = myPad.tx = g.padA.x; myPad.y = myPad.ty = g.padA.y;
+    foePad.x = foePad.tx = g.padB.x; foePad.y = foePad.ty = g.padB.y;
+  }
 }
 
 function render(dt) {
@@ -867,8 +982,8 @@ function render(dt) {
   R.trail.push({ x: R.puck.x, y: R.puck.y });
   if (R.trail.length > 7) R.trail.shift();
 
-  drawPaddle(R.foe, PAL.foe, App.mode === 'online' && !App.peerOn);
-  drawPaddle(R.me, PAL.me, false);
+  drawPaddle(R.foe, PAL.foe, App.rFoe, App.mode === 'online' && !App.peerOn);
+  drawPaddle(R.me, PAL.me, App.rMe, false);
   drawPuck(R.puck);
 
   cx.restore();
@@ -925,22 +1040,82 @@ function wireOptions(groupId, get, set) {
   return paint;
 }
 
+/* A plain on/off row. */
+function wireToggle(id, get, set) {
+  const el = $(id);
+  const paint = () => {
+    const on = !!get();
+    el.classList.toggle('is-on', on);
+    el.setAttribute('aria-checked', on ? 'true' : 'false');
+  };
+  el.addEventListener('click', () => { Snd.ui(); set(!get()); paint(); });
+  paint();
+  return paint;
+}
+
 let onlineTarget = 7;
 let localTarget = 7;
+let onlineMode = Cfg.mode, localMode = Cfg.mode;
+let onlineHalf = Cfg.half, localHalf = Cfg.half;
 
-wirePicker('pick-online', 't-online', (v) => { onlineTarget = v; syncChips('pick-online', 't-online', v); });
+wirePicker('pick-online', 't-online', (v) => {
+  onlineTarget = v;
+  syncChips('pick-online', 't-online', v);
+  updatePlan('plan-online', v, onlineHalf);
+});
 wirePicker('pick-local', 't-local', (v) => {
   localTarget = v;
   syncChips('pick-local', 't-local', v);
-  updatePlan(v);
+  updatePlan('plan-local', v, localHalf);
 });
 wirePicker('pick-lobby', 't-lobby', (v) => {
   if (App.side !== 'a') return;
   App.target = v;
   syncChips('pick-lobby', 't-lobby', v);
+  updatePlan('plan-lobby', v, App.halfAt > 0);
   Net.send({ t: 'target', v });
 });
-updatePlan(localTarget);
+
+wireOptions('mode-online', () => onlineMode, (v) => { onlineMode = v; Cfg.mode = v; Cfg.save(); });
+wireOptions('mode-local', () => localMode, (v) => { localMode = v; Cfg.mode = v; Cfg.save(); });
+wireToggle('half-online', () => onlineHalf, (v) => {
+  onlineHalf = v; Cfg.half = v; Cfg.save();
+  updatePlan('plan-online', onlineTarget, v);
+});
+wireToggle('half-local', () => localHalf, (v) => {
+  localHalf = v; Cfg.half = v; Cfg.save();
+  updatePlan('plan-local', localTarget, v);
+  $('hint-local-half').classList.toggle('hidden', !v);
+});
+updatePlan('plan-online', onlineTarget, onlineHalf);
+updatePlan('plan-local', localTarget, localHalf);
+$('hint-local-half').classList.toggle('hidden', !localHalf);
+
+/* Only the host may touch the lobby rules; the guest sees them greyed out. */
+function sendOpts() {
+  Net.send({ t: 'opts', mode: App.gameMode, half: App.halfAt > 0 });
+}
+const paintLobbyMode = wireOptions('mode-lobby', () => App.gameMode, (v) => {
+  if (App.side !== 'a') return;
+  App.gameMode = v;
+  sendOpts();
+});
+const paintLobbyHalf = wireToggle('half-lobby', () => App.halfAt > 0, (v) => {
+  if (App.side !== 'a') return;
+  App.halfAt = v ? halftimeFor(App.target) : 0;
+  sendOpts();
+});
+
+function syncLobbyRules() {
+  const host = App.side === 'a';
+  $('lobby-rules').classList.toggle('locked', !host);
+  $('lobby-hostnote').classList.toggle('hidden', !host);
+  $('lobby-guestnote').classList.toggle('hidden', host);
+  syncChips('pick-lobby', 't-lobby', App.target);
+  paintLobbyMode();
+  paintLobbyHalf();
+  updatePlan('plan-lobby', App.target, App.halfAt > 0);
+}
 
 (function buildPuckChips() {
   const g = $('pick-puck');
@@ -973,7 +1148,7 @@ repaintPuckChips = wireOptions('pick-puck', () => Cfg.puck, (v) => {
 wireOptions('pick-pad', () => Cfg.pad, (v) => {
   Cfg.pad = +v;
   Cfg.save();
-  if (App.mode !== 'online') App.padR = Cfg.padR();
+  if (App.mode !== 'online') { App.padR = Cfg.padR(); App.rMe = App.rFoe = App.padR; }
   drawPreview();
 });
 wireOptions('pick-grip', () => Cfg.grip, (v) => {
@@ -1080,6 +1255,8 @@ function resetRender() {
   R.shake = 0;
   pointers.clear();
   App.lastCd = -1;
+  App.halfReady = false;
+  App.rMe = App.rFoe = App.padR;
   lastSent = { x: -1, y: -1 };
 }
 
@@ -1095,13 +1272,17 @@ function startLocal() {
   App.mode = 'local';
   App.target = localTarget;
   App.padR = Cfg.padR();
+  App.gameMode = localMode;
   App.lastState = -1;
-  App.game = new Game({ target: localTarget, padR: App.padR, halftime: true });
+  App.game = new Game({
+    target: localTarget, padR: App.padR, halftime: localHalf, mode: localMode,
+  });
+  App.halfAt = App.game.halfAt;
   App.game.startCountdown();
   setFlip(false);
   $('hud-me').textContent = 'Oyuncu 1';
   $('hud-foe').textContent = 'Oyuncu 2';
-  setHudTarget(localTarget, App.game.halfAt);
+  setHudTarget(localTarget, App.halfAt, localMode);
   $('hud-ping').parentElement.style.display = 'none';
   enterGame();
 }
@@ -1114,7 +1295,7 @@ function leaveGame() {
   App.snap = null;
   setFlip(false);
   hideOver();
-  $('cmsg').classList.add('hidden');
+  hideMsg();
   show('s-menu');
 }
 
@@ -1157,7 +1338,10 @@ $('b-create').addEventListener('click', () => {
   Snd.ui();
   if (!Net.ready) { toast('Sunucuya bağlanılıyor, bir saniye…'); Net.connect(); return; }
   App.lastState = -1;
-  Net.send({ t: 'create', target: onlineTarget, pad: Cfg.padR(), name: App.myName });
+  Net.send({
+    t: 'create', target: onlineTarget, mode: onlineMode, half: onlineHalf,
+    pad: Cfg.padR(), name: App.myName,
+  });
 });
 
 $('i-code').addEventListener('input', (e) => {

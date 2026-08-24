@@ -1,4 +1,30 @@
 import SwiftUI
+import UIKit
+
+// MARK: - device
+
+/// The same app runs on a phone you put down between you and on a tablet that
+/// makes a genuinely table-sized rink. Only two things really differ: how wide
+/// the menu column may grow, and what to call the thing in the middle.
+enum Device {
+    static let isPad = UIDevice.current.userInterfaceIdiom == .pad
+
+    /// Menu column width. A phone-width strip marooned in the middle of a
+    /// 13-inch screen reads as a broken layout, not as a clean one.
+    static var column: CGFloat { isPad ? 560 : 430 }
+
+    /// Menu type scale. The rink itself is laid out in field units and is
+    /// unaffected.
+    static var typeScale: CGFloat { isPad ? 1.16 : 1 }
+
+    static var sameDevice: String { isPad ? "Aynı iPad'de 2 Kişi" : "Aynı Telefonda 2 Kişi" }
+    /// accusative — "…yu aranıza koyun", "…yu 180° çevirin"
+    static var itAcc: String { isPad ? "iPad'i" : "telefonu" }
+    static var itAccCap: String { isPad ? "iPad'i" : "Telefonu" }
+}
+
+/// Menu font size, nudged up on a tablet. Never used for rink geometry.
+@inline(__always) func sz(_ s: CGFloat) -> CGFloat { s * Device.typeScale }
 
 // MARK: - palettes
 
@@ -182,6 +208,9 @@ final class Prefs: ObservableObject {
     @Published var puck: String { didSet { save() } }
     @Published var padIndex: Int { didSet { save() } }
     @Published var gripIndex: Int { didSet { save() } }
+    /// Last match rules, so the same two people do not re-pick them every time.
+    @Published var mode: GameMode { didSet { save() } }
+    @Published var half: Bool { didSet { save() } }
 
     private init() {
         let d = UserDefaults.standard
@@ -189,6 +218,8 @@ final class Prefs: ObservableObject {
         puck = d.string(forKey: "ah_puck") ?? "tema"
         padIndex = d.object(forKey: "ah_pad") as? Int ?? 1
         gripIndex = d.object(forKey: "ah_grip") as? Int ?? 2
+        mode = GameMode.from(d.string(forKey: "ah_mode"))
+        half = d.object(forKey: "ah_half") as? Bool ?? true
         PAL = Palettes.named(theme)
     }
 
@@ -198,6 +229,8 @@ final class Prefs: ObservableObject {
         d.set(puck, forKey: "ah_puck")
         d.set(padIndex, forKey: "ah_pad")
         d.set(gripIndex, forKey: "ah_grip")
+        d.set(mode.rawValue, forKey: "ah_mode")
+        d.set(half, forKey: "ah_half")
     }
 
     var padR: Double { padSizes[min(padIndex, padSizes.count - 1)] }
@@ -245,7 +278,7 @@ struct Backdrop: View {
 struct PrimaryButton: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 17, weight: .bold))
+            .font(.system(size: sz(17), weight: .bold))
             .foregroundStyle(T.onMe)
             .frame(maxWidth: .infinity, minHeight: 58)
             .background(
@@ -261,7 +294,7 @@ struct PrimaryButton: ButtonStyle {
 struct PlainButton: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 16, weight: .semibold))
+            .font(.system(size: sz(16), weight: .semibold))
             .foregroundStyle(T.txt)
             .frame(maxWidth: .infinity, minHeight: 58)
             .background(T.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -274,7 +307,7 @@ struct PlainButton: ButtonStyle {
 struct GhostButton: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .semibold))
+            .font(.system(size: sz(15), weight: .semibold))
             .foregroundStyle(T.dim)
             .frame(maxWidth: .infinity, minHeight: 44)
             .opacity(configuration.isPressed ? 0.6 : 1)
@@ -303,7 +336,7 @@ struct ScorePicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Kaç golde biter?")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: sz(13), weight: .semibold))
                 .foregroundStyle(T.dim)
             HStack(spacing: 8) {
                 ForEach(presets, id: \.self) { n in
@@ -313,7 +346,7 @@ struct ScorePicker: View {
                         Sound.shared.ui()
                     } label: {
                         Text("\(n)")
-                            .font(.system(size: 17, weight: .heavy))
+                            .font(.system(size: sz(17), weight: .heavy))
                             .frame(maxWidth: .infinity, minHeight: 50)
                     }
                     .buttonStyle(ChipStyle(on: value == n))
@@ -326,17 +359,101 @@ struct ScorePicker: View {
     }
 }
 
+/// "Klasik" / "Şanslı" — the two ways a match can be played.
+struct ModePicker: View {
+    @Binding var value: GameMode
+    var editable: Bool = true
+
+    private let items: [(GameMode, String, String)] = [
+        (.classic, "Klasik", "Kurallar sabit"),
+        (.lucky, "Şanslı", "Sopalar büyür, buz değişir"),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Oyun modu")
+                .font(.system(size: sz(13), weight: .semibold))
+                .foregroundStyle(T.dim)
+            HStack(spacing: 8) {
+                ForEach(items, id: \.0) { mode, name, blurb in
+                    Button {
+                        guard editable else { return }
+                        Sound.shared.ui()
+                        value = mode
+                    } label: {
+                        VStack(spacing: 2) {
+                            Text(name).font(.system(size: sz(16), weight: .black))
+                            Text(blurb)
+                                .font(.system(size: sz(11), weight: .semibold))
+                                .opacity(0.75)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.8)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 62)
+                        .padding(.horizontal, 6)
+                    }
+                    .buttonStyle(ChipStyle(on: value == mode))
+                }
+            }
+        }
+        .opacity(editable ? 1 : 0.55)
+    }
+}
+
+/// A labelled on/off row, e.g. the half-time break.
+struct OptionToggle: View {
+    let title: String
+    let blurb: String
+    @Binding var isOn: Bool
+    var editable: Bool = true
+
+    var body: some View {
+        Button {
+            guard editable else { return }
+            Sound.shared.ui()
+            isOn.toggle()
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.system(size: sz(15), weight: .heavy)).foregroundStyle(T.txt)
+                    Text(blurb).font(.system(size: sz(12))).foregroundStyle(T.dim)
+                }
+                Spacer(minLength: 8)
+                Capsule()
+                    .fill(isOn ? T.me : T.line)
+                    .frame(width: 46, height: 28)
+                    .overlay(alignment: isOn ? .trailing : .leading) {
+                        Circle().fill(.white)
+                            .frame(width: 22, height: 22)
+                            .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+                            .padding(.horizontal, 3)
+                    }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .frame(minHeight: 58)
+            .background(T.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(isOn ? T.me : T.line))
+        }
+        .buttonStyle(.plain)
+        .animation(.easeOut(duration: 0.16), value: isOn)
+        .opacity(editable ? 1 : 0.55)
+    }
+}
+
 /// "4 golde devre → 7 golde biter" — what the match will actually look like.
 struct MatchPlan: View {
     let target: Int
-    private var half: Int { Engine.halftimeFor(target) }
+    var enabled: Bool = true
+    private var half: Int { enabled ? Engine.halftimeFor(target) : 0 }
 
     var body: some View {
         Group {
             if half > 0 {
                 HStack(spacing: 10) {
                     part(half, "golde", "devre", T.gold)
-                    Text("→").font(.system(size: 15, weight: .heavy)).foregroundStyle(T.dim.opacity(0.6))
+                    Text("→").font(.system(size: sz(15), weight: .heavy)).foregroundStyle(T.dim.opacity(0.6))
                     part(target, "golde", "biter", T.me)
                 }
                 .frame(maxWidth: .infinity)
@@ -349,10 +466,10 @@ struct MatchPlan: View {
 
     private func part(_ n: Int, _ mid: String, _ tail: String, _ tint: Color) -> some View {
         HStack(spacing: 4) {
-            Text("\(n)").font(.system(size: 22, weight: .black, design: .rounded))
+            Text("\(n)").font(.system(size: sz(22), weight: .black, design: .rounded))
                 .monospacedDigit().foregroundStyle(T.txt)
-            Text(mid).font(.system(size: 14, weight: .semibold)).foregroundStyle(T.dim)
-            Text(tail).font(.system(size: 14, weight: .heavy)).foregroundStyle(tint)
+            Text(mid).font(.system(size: sz(14), weight: .semibold)).foregroundStyle(T.dim)
+            Text(tail).font(.system(size: sz(14), weight: .heavy)).foregroundStyle(tint)
         }
     }
 }
@@ -368,7 +485,7 @@ private struct CustomScoreField: View {
         TextField("…", text: $text)
             .keyboardType(.numberPad)
             .multilineTextAlignment(.center)
-            .font(.system(size: 17, weight: .heavy))
+            .font(.system(size: sz(17), weight: .heavy))
             .foregroundStyle(isCustom ? T.onMe : T.txt)
             .focused($focused)
             .disabled(!editable)
