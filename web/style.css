@@ -341,22 +341,30 @@ input::placeholder{color:var(--dim);opacity:.7}
 
 .hud-top,.hud-bot{display:flex;align-items:center;gap:12px}
 .hud-top{transform:rotate(180deg);align-self:flex-start}
-.hud-bot{align-self:flex-start}
-.hud-name{font-size:12px;font-weight:700;color:var(--dim);letter-spacing:.06em;text-transform:uppercase}
+.hud-bot{align-self:stretch}
+.hud-name{
+  font-size:12px;font-weight:700;color:var(--dim);letter-spacing:.06em;text-transform:uppercase;
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
 .hud-score{font-size:34px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
 .hud-top .hud-score{color:var(--foe)}
 .hud-bot .hud-score{color:var(--me)}
 
-.hud-mid{display:flex;align-items:center;justify-content:space-between;transition:opacity .18s ease}
-/* the countdown lands right on top of this strip — let it through */
-#s-game.msg .hud-mid{opacity:0}
+/* Match rules and ping: reference you glance at between rallies, not something
+   that should compete with the puck. Tucked into the far corner of your own
+   side and kept faint — no pill, no border. */
+.hud-meta{
+  margin-left:auto;align-self:flex-end;
+  display:flex;align-items:baseline;gap:10px;
+  white-space:nowrap;flex:none;
+}
+/* The fade sits on each item, not on the row: a child cannot out-shine a
+   translucent parent, and a bad ping still has to be readable. */
 .hud-target,.hud-net{
-  font-size:11px;font-weight:800;letter-spacing:.1em;color:var(--dim);
-  border:1px solid var(--line);border-radius:99px;padding:5px 12px;
-  background:var(--scrim);
+  font-size:10px;font-weight:700;letter-spacing:.09em;color:var(--dim);opacity:.34;
 }
 .hud-net{letter-spacing:0;font-variant-numeric:tabular-nums}
-.hud-net.bad{color:var(--foe);border-color:var(--foe)}
+.hud-net.bad{color:var(--foe);opacity:.8}
 .hud-target b{color:var(--gold)}
 
 .hud-exit{
