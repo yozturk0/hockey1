@@ -166,6 +166,9 @@ body[data-theme="gece"] .logo-puck{box-shadow:0 0 22px var(--foe)}
 }
 .btn-ghost{background:none;border-color:transparent;color:var(--dim);min-height:46px;font-weight:600;font-size:15px}
 .btn-ghost:active{background:var(--fill)}
+/* the settings row: gear pinned to the far left, one word in the middle */
+.btn-gear{position:relative;background:var(--fill);border-color:var(--line);color:var(--txt);font-weight:700;min-height:52px}
+.gear-ico{position:absolute;left:18px;font-size:18px;line-height:1}
 .btn-sm{min-height:46px;font-size:14px;padding:10px 14px}
 
 .btn-ico{font-size:24px;line-height:1}
@@ -230,6 +233,44 @@ input::placeholder{color:var(--dim);opacity:.7}
 .chip-theme[data-v="buz"]::before{background:#e9f1fa}
 .chip-theme[data-v="cim"]::before{background:#e8f0d9}
 .chip-theme[data-v="gece"]::before{background:#0d1424}
+
+/* mode chips carry a name and a one-line explanation */
+.chip-mode{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  height:62px;padding:6px 8px;
+}
+.chip-mode b{font-size:16px;font-weight:900}
+.chip-mode small{font-size:11px;font-weight:600;opacity:.7;line-height:1.25;text-align:center}
+.chip-mode.is-on small{opacity:.85}
+
+/* on/off row, e.g. the half-time break */
+.toggle{
+  display:flex;align-items:center;gap:12px;
+  width:100%;min-height:58px;padding:12px 16px;
+  border:1px solid var(--line);border-radius:var(--r);
+  background:var(--fill-2);color:var(--txt);font:inherit;text-align:left;
+  cursor:pointer;transition:border-color .16s ease,background .16s ease;
+}
+.toggle-txt{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.toggle-txt b{font-size:15px;font-weight:800}
+.toggle-txt small{font-size:12px;font-weight:500;color:var(--dim)}
+.toggle-knob{
+  flex:none;width:46px;height:28px;border-radius:99px;
+  background:var(--line);position:relative;transition:background .18s ease;
+}
+.toggle-knob::after{
+  content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;
+  background:var(--fill-2);box-shadow:0 1px 4px rgba(0,0,0,.3);
+  transition:transform .18s ease;
+}
+.toggle.is-on{border-color:var(--me)}
+.toggle.is-on .toggle-knob{background:var(--me)}
+.toggle.is-on .toggle-knob::after{transform:translateX(18px);background:#fff}
+.toggle:active{transform:scale(.99)}
+
+/* a block of match rules reads as one group */
+.rules{display:flex;flex-direction:column;gap:12px}
+.rules.locked{opacity:.55;pointer-events:none}
 
 .chip-puck{font-size:14px;flex:1 1 28%;height:52px}
 .chip-puck::before{
@@ -306,7 +347,9 @@ input::placeholder{color:var(--dim);opacity:.7}
 .hud-top .hud-score{color:var(--foe)}
 .hud-bot .hud-score{color:var(--me)}
 
-.hud-mid{display:flex;align-items:center;justify-content:space-between}
+.hud-mid{display:flex;align-items:center;justify-content:space-between;transition:opacity .18s ease}
+/* the countdown lands right on top of this strip — let it through */
+#s-game.msg .hud-mid{opacity:0}
 .hud-target,.hud-net{
   font-size:11px;font-weight:800;letter-spacing:.1em;color:var(--dim);
   border:1px solid var(--line);border-radius:99px;padding:5px 12px;
@@ -340,6 +383,8 @@ body[data-theme="gece"] .center-msg{color:#fff;text-shadow:0 0 44px rgba(34,211,
 .center-msg.goal{font-size:clamp(30px,11vw,56px);color:var(--gold)}
 /* status lines are sentences, not scoreboard shouts — they have to fit */
 .center-msg.wait{font-size:clamp(20px,6.5vw,34px);font-weight:800;color:var(--dim)}
+/* a lucky-mode twist announces itself without shouting over the rally */
+.center-msg.lucky{font-size:clamp(19px,6vw,32px);font-weight:900;color:var(--gold);letter-spacing:.02em}
 
 /* ---------------- overlays ---------------- */
 
@@ -366,11 +411,16 @@ body[data-theme="gece"] .center-msg{color:#fff;text-shadow:0 0 44px rgba(34,211,
   padding:calc(18px + var(--safe-t)) 20px calc(18px + var(--safe-b));
 }
 .half-msg{display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center}
+.half-msg.hidden,.half-icon.hidden,.hint.hidden{display:none}
 .half-msg.half-flip{transform:rotate(180deg)}
 .half-msg b{font-size:26px;font-weight:900;letter-spacing:.2em;color:var(--gold)}
 .half-msg span{font-size:15px;font-weight:700;color:var(--txt)}
 
+/* Online there is no phone to turn, so one upright notice is all it needs. */
+.half.solo{justify-content:center}
 .half-core{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;width:100%;max-width:330px}
+.half-title{font-size:26px;font-weight:900;letter-spacing:.2em;color:var(--gold)}
+.half-title.hidden{display:none}
 .half-score{font-size:42px;font-weight:900;font-variant-numeric:tabular-nums}
 .half-note{font-size:13px;line-height:1.5;color:var(--dim)}
 .half-core .btn{margin-top:4px}
