@@ -4,7 +4,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
-const { Game, ST, CONST } = require('../web/engine.js');
+const { Game, ST, CONST, MODES } = require('../web/engine.js');
 
 const PORT = process.env.PORT || 8080;
 const WEB_DIR = path.join(__dirname, '..', 'web');
@@ -13,6 +13,9 @@ const SEND_HZ = 60;
 const ROOM_TTL_MS = 90_000;      // empty room survives this long so players can rejoin
 const LOBBY_TTL_MS = 15 * 60_000;
 const MAX_MSG_PER_SEC = 150;
+/* Nobody should be able to hold the other player in the half-time break; if
+   one of them wanders off, the second half starts by itself. */
+const HALFTIME_AUTO_MS = 25_000;
 
 /* ---------------- room registry ---------------- */
 
@@ -30,19 +33,30 @@ function newCode() {
   return null;
 }
 
-function createRoom(target, padR) {
+function createRoom(opts) {
   const code = newCode();
   if (!code) return null;
   const room = {
     code,
-    game: new Game({ target, padR }),
+    game: new Game(opts),
     seats: { a: null, b: null },
     names: { a: 'Oyuncu 1', b: 'Oyuncu 2' },
+    ready: { a: false, b: false },
+    halfSince: 0,
     emptySince: Date.now(),
     createdAt: Date.now(),
   };
   rooms.set(code, room);
   return room;
+}
+
+/* The lobby is the only place the match rules can change. */
+function readOpts(m) {
+  return {
+    target: Math.min(15, Math.max(1, parseInt(m.target, 10) || 7)),
+    mode: m.mode === MODES.LUCKY ? MODES.LUCKY : MODES.CLASSIC,
+    halftime: !!m.half,
+  };
 }
 
 function occupancy(room) {
@@ -66,10 +80,32 @@ function roomInfo(room) {
     code: room.code,
     target: room.game.target,
     pad: room.game.padR,
+    mode: room.game.mode,
+    half: room.game.halfAt,
     names: room.names,
     a: !!room.seats.a,
     b: !!room.seats.b,
   };
+}
+
+/* Who has tapped "ready" during the break. */
+function halfInfo(room) {
+  return { t: 'hr', a: room.ready.a, b: room.ready.b };
+}
+
+function beginHalftime(room) {
+  room.ready.a = false;
+  room.ready.b = false;
+  room.halfSince = Date.now();
+  broadcast(room, halfInfo(room));
+}
+
+function endHalftime(room) {
+  room.ready.a = false;
+  room.ready.b = false;
+  room.halfSince = 0;
+  room.game.resumeHalftime();
+  broadcast(room, halfInfo(room));
 }
 
 function leaveRoom(ws) {
@@ -77,7 +113,12 @@ function leaveRoom(ws) {
   if (!room) return;
   if (room.seats[ws.side] === ws) {
     room.seats[ws.side] = null;
-    if (room.game.state === ST.PLAYING || room.game.state === ST.COUNTDOWN) {
+    if (room.game.state === ST.PLAYING || room.game.state === ST.COUNTDOWN ||
+        room.game.state === ST.HALFTIME) {
+      // A break nobody can walk out of would strand the player who stayed.
+      room.ready.a = false;
+      room.ready.b = false;
+      room.halfSince = 0;
       room.game.pause();
     }
     if (occupancy(room) === 0) room.emptySince = Date.now();
@@ -166,10 +207,9 @@ wss.on('connection', (ws) => {
 
       case 'create': {
         leaveRoom(ws);
-        const target = Math.min(15, Math.max(1, parseInt(m.target, 10) || 7));
         // The host's mallet-size preference becomes the room's; the engine
         // clamps it, and both clients are told what it ended up as.
-        const room = createRoom(target, parseFloat(m.pad));
+        const room = createRoom({ ...readOpts(m), padR: parseFloat(m.pad) });
         if (!room) return send(ws, { t: 'err', m: 'Oda olusturulamadi, tekrar dene.' });
         room.seats.a = ws;
         if (typeof m.name === 'string' && m.name.trim()) {
@@ -177,7 +217,8 @@ wss.on('connection', (ws) => {
         }
         ws.room = room;
         ws.side = 'a';
-        send(ws, { t: 'joined', code: room.code, side: 'a', target: room.game.target, pad: room.game.padR });
+        send(ws, { t: 'joined', code: room.code, side: 'a', target: room.game.target,
+                   pad: room.game.padR, mode: room.game.mode, half: room.game.halfAt });
         broadcast(room, roomInfo(room));
         break;
       }
@@ -199,9 +240,11 @@ wss.on('connection', (ws) => {
         }
         ws.room = room;
         ws.side = side;
-        send(ws, { t: 'joined', code: room.code, side, target: room.game.target, pad: room.game.padR });
+        send(ws, { t: 'joined', code: room.code, side, target: room.game.target,
+                   pad: room.game.padR, mode: room.game.mode, half: room.game.halfAt });
         broadcast(room, roomInfo(room));
         broadcast(room, { t: 'peer', on: true });
+        if (room.game.state === ST.HALFTIME) send(ws, halfInfo(room));
 
         if (occupancy(room) === 2) {
           if (room.game.state === ST.PAUSED) room.game.resume();
@@ -220,6 +263,28 @@ wss.on('connection', (ws) => {
         break;
       }
 
+      case 'opts': {
+        // Mode and the half-time break, likewise host-only and pre-kickoff.
+        const room = ws.room;
+        if (!room || ws.side !== 'a') return;
+        if (room.game.state !== ST.LOBBY && room.game.state !== ST.OVER) return;
+        const o = readOpts({ target: room.game.target, mode: m.mode, half: m.half });
+        room.game.setMode(o.mode);
+        room.game.setHalftime(o.halftime);
+        broadcast(room, roomInfo(room));
+        break;
+      }
+
+      case 'ready': {
+        // Half-time break: the second half starts once both players tap.
+        const room = ws.room;
+        if (!room || room.game.state !== ST.HALFTIME) return;
+        room.ready[ws.side] = true;
+        broadcast(room, halfInfo(room));
+        if (room.ready.a && room.ready.b) endHalftime(room);
+        break;
+      }
+
       case 'i': {
         const room = ws.room;
         if (!room) return;
@@ -233,6 +298,9 @@ wss.on('connection', (ws) => {
         const room = ws.room;
         if (!room) return;
         if (occupancy(room) < 2) return;
+        room.ready.a = false;
+        room.ready.b = false;
+        room.halfSince = 0;
         room.game.restart();
         break;
       }
@@ -279,7 +347,11 @@ setInterval(() => {
 
   for (const room of rooms.values()) {
     const g = room.game;
+    const before = g.state;
     if (g.state === ST.PLAYING || g.state === ST.COUNTDOWN) g.step(dt);
+    if (g.state === ST.HALFTIME && before !== ST.HALFTIME) beginHalftime(room);
+    else if (g.state === ST.HALFTIME && room.halfSince &&
+             now - room.halfSince > HALFTIME_AUTO_MS) endHalftime(room);
     if (!doSend) continue;                 // events keep piling up until the next send
     if (room.seats.a) send(room.seats.a, g.snapshot('a'));
     if (room.seats.b) send(room.seats.b, g.snapshot('b'));

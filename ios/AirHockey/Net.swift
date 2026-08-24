@@ -10,6 +10,9 @@ struct Snapshot {
     var puckV = Vec(x: 0, y: 0)
     var me = Vec(x: Field.W / 2, y: Field.H * 0.78)
     var foe = Vec(x: Field.W / 2, y: Field.H * 0.22)
+    /// Live mallet radii — in lucky mode they change mid-rally.
+    var rMe = Field.padR
+    var rFoe = Field.padR
     var scoreMe = 0
     var scoreFoe = 0
     var iWon: Bool?
@@ -22,9 +25,13 @@ enum NetStatus: Equatable {
 
 protocol NetDelegate: AnyObject {
     func netStatus(_ s: NetStatus)
-    func netJoined(code: String, side: String, target: Int, pad: Double)
-    func netRoom(target: Int, pad: Double, myName: String, foeName: String, foePresent: Bool)
+    func netJoined(code: String, side: String, target: Int, pad: Double,
+                   mode: GameMode, half: Int)
+    func netRoom(target: Int, pad: Double, mode: GameMode, half: Int,
+                 myName: String, foeName: String, foePresent: Bool)
     func netPeer(online: Bool)
+    /// Half-time break: who has tapped "ready".
+    func netHalfReady(mine: Bool, foe: Bool)
     func netError(_ message: String)
     func netSnapshot(_ s: Snapshot)
     func netPing(_ ms: Int)
@@ -120,8 +127,9 @@ final class Net: NSObject {
 
     /// The host's mallet-size preference becomes the room's; the server clamps
     /// it and tells both clients what it ended up as.
-    func create(target: Int, pad: Double) {
-        send(["t": "create", "target": target, "pad": pad, "name": myName])
+    func create(target: Int, pad: Double, mode: GameMode, half: Bool) {
+        send(["t": "create", "target": target, "pad": pad,
+              "mode": mode.rawValue, "half": half, "name": myName])
     }
 
     func join(code: String) {
@@ -130,6 +138,11 @@ final class Net: NSObject {
     }
 
     func setTarget(_ v: Int) { send(["t": "target", "v": v]) }
+    /// Mode and the half-time break; host-only, and only before kickoff.
+    func setOpts(mode: GameMode, half: Bool) {
+        send(["t": "opts", "mode": mode.rawValue, "half": half])
+    }
+    func ready() { send(["t": "ready"]) }
     func restart() { send(["t": "restart"]) }
     func leave() { wantRoom = nil; send(["t": "leave"]) }
     func input(x: Double, y: Double) {
@@ -183,7 +196,9 @@ final class Net: NSObject {
             wantRoom = code
             delegate?.netJoined(code: code, side: mySide,
                                 target: obj["target"] as? Int ?? 7,
-                                pad: obj["pad"] as? Double ?? 0)
+                                pad: obj["pad"] as? Double ?? 0,
+                                mode: GameMode.from(obj["mode"] as? String),
+                                half: obj["half"] as? Int ?? 0)
 
         case "room":
             let names = obj["names"] as? [String: Any] ?? [:]
@@ -194,12 +209,20 @@ final class Net: NSObject {
             let foeHere = mySide == "a" ? bHere : aHere
             delegate?.netRoom(target: obj["target"] as? Int ?? 7,
                               pad: obj["pad"] as? Double ?? 0,
+                              mode: GameMode.from(obj["mode"] as? String),
+                              half: obj["half"] as? Int ?? 0,
                               myName: mine,
                               foeName: foeHere ? other : "Rakip",
                               foePresent: foeHere)
 
         case "peer":
             delegate?.netPeer(online: obj["on"] as? Bool ?? false)
+
+        case "hr":
+            let a = obj["a"] as? Bool ?? false
+            let b = obj["b"] as? Bool ?? false
+            delegate?.netHalfReady(mine: mySide == "a" ? a : b,
+                                   foe: mySide == "a" ? b : a)
 
         case "err":
             delegate?.netError(obj["m"] as? String ?? "Bilinmeyen hata")
@@ -221,6 +244,8 @@ final class Net: NSObject {
         }
         if let m = o["m"] as? [Double], m.count >= 2 { s.me = Vec(x: m[0], y: m[1]) }
         if let f = o["o"] as? [Double], f.count >= 2 { s.foe = Vec(x: f[0], y: f[1]) }
+        if let r = o["rm"] as? Double, r > 0 { s.rMe = r }
+        if let r = o["ro"] as? Double, r > 0 { s.rFoe = r }
         s.scoreMe = o["sm"] as? Int ?? 0
         s.scoreFoe = o["so"] as? Int ?? 0
         if let w = o["w"] as? Int { s.iWon = (w == 1) }

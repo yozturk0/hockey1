@@ -1,14 +1,14 @@
 # Air Hockey — Online (Türkçe)
 
 Oda kodu paylaşarak oynanan gerçek zamanlı hava hokeyi. **Kayıt yok, hesap yok, indirme zorunluluğu yok.**
-Web tarayıcısındaki bir oyuncu ile iPhone uygulamasındaki bir oyuncu **aynı maçta** oynayabilir.
+Web tarayıcısındaki bir oyuncu ile iPhone/iPad uygulamasındaki bir oyuncu **aynı maçta** oynayabilir.
 
 ```
 hockey1/
 ├── server/server.js      Otoriter WebSocket sunucusu + statik site servisi
 ├── web/                  Tarayıcı istemcisi (site burası)
 │   └── engine.js         Fizik motoru — sunucu da bu dosyayı kullanır
-├── ios/                  Xcode projesi (SwiftUI, yerel)
+├── ios/                  Xcode projesi (SwiftUI; tek hedef, iPhone + iPad)
 ├── test/                 Motor + sunucu testleri
 └── Dockerfile, fly.toml, render.yaml
 ```
@@ -84,7 +84,7 @@ Tarayıcılar `https://` sayfadan `ws://` bağlantısına izin vermez.
 
 ---
 
-## 3. iPhone uygulaması
+## 3. iPhone / iPad uygulaması
 
 ```bash
 open ios/AirHockey.xcodeproj
@@ -92,15 +92,26 @@ open ios/AirHockey.xcodeproj
 
 1. **Signing & Capabilities** → *Team* olarak kendi Apple ID'ni seç.
    (`PRODUCT_BUNDLE_IDENTIFIER` çakışırsa `com.airhockey.tr` yerine kendine ait bir şey yaz.)
-2. Üstten telefonunu seç, **⌘R**.
-3. Uygulamada ana menüdeki **⚙️** simgesine dokun → **Sunucu adresi** alanına yayına aldığın
-   adresi yaz (`https://air-hockey-xxxx.onrender.com`) → **Kaydet**.
+2. Üstten cihazını seç (iPhone ya da iPad — tek hedef ikisini de derler), **⌘R**.
+3. Uygulamada ana menünün altındaki **Ayarlar** satırına dokun → **Sunucu** alanına yayına
+   aldığın adresi yaz (`https://air-hockey-xxxx.onrender.com`) → **Kaydet**.
 
 Varsayılan adres `http://localhost:8080`'dir; Xcode simülatöründe hiçbir şey değiştirmeden çalışır.
 Gerçek telefonda aynı Wi-Fi'daki bilgisayarını test etmek için `http://192.168.1.20:8080` yazabilirsin —
 `Info.plist` yerel ağ için gerekli izni içeriyor. **Genel internete açık sunucun `https://` olmalı.**
 
 Paylaşılan davet linkleri (`airhockey://oda/ABCD`) uygulamayı doğrudan o odada açar.
+
+**iPad:** Hedef `TARGETED_DEVICE_FAMILY = "1,2"` ile derlenir; ayrı bir proje ya da ayrı
+bir derleme yok — aynı ikili iPhone'da da iPad'de de çalışır. Uygulama iPad'de menü
+sütununu genişletir, yazıları biraz büyütür ve metinleri cihaza göre söyler
+("Aynı iPad'de 2 Kişi", "iPad'i 180° çevirin"). Saha 100×200 birimlik dikey bir
+dikdörtgen olduğu için uygulama iPad'de de yalnızca dikey çalışır — büyük ekranda
+gerçek bir masa boyutunda saha çıkar. Derlemeyi doğrulamak için:
+
+```bash
+xcodebuild -project ios/AirHockey.xcodeproj -scheme AirHockey -destination 'generic/platform=iOS' -configuration Release CODE_SIGNING_ALLOWED=NO build
+```
 
 ---
 
@@ -110,20 +121,61 @@ Paylaşılan davet linkleri (`airhockey://oda/ABCD`) uygulamayı doğrudan o oda
 gönderir (Paylaş düğmesi hazır bir davet metni üretir). Diğeri kodu girip *Katıl* der.
 İki taraf da kendi ekranının **alt yarısında** kendini görür — kimse ters oynamaz.
 
-**Aynı telefonda 2 kişi:** Telefonu masaya koyun. Alt yarı bir oyuncunun, üst yarı diğerinin.
-Aynı anda iki parmak çalışır.
+**Aynı telefonda 2 kişi:** Telefonu (ya da iPad'i) masaya koyun. Alt yarı bir oyuncunun,
+üst yarı diğerinin. Aynı anda iki parmak çalışır.
+
+### Modlar
+
+| Mod | Ne değişir |
+|---|---|
+| **Klasik** | Kurallar maç boyunca sabit. Standart hava hokeyi. |
+| **Şanslı** | Maç aynı sahada, aynı ayarlarla oynanır; arada küçük ve kısa süreli sürprizler çıkar. |
+
+**Şanslı mod** ne yapar: oyun canlıyken yaklaşık 6,5–9 saniyede bir küçük bir olay
+tetiklenir ve 6 saniye sürer.
+
+- Bir oyuncunun sopası **%18 büyür** ya da **%15 küçülür**.
+- Ya da **buz değişir**: kaygan buzda top daha uzun kayar, ağır buzda daha çabuk durur
+  (bu ikisi iki oyuncuyu da eşit etkiler).
+
+Kişisel etkiler karıştırılmış bir torbadan çekilir: her dört çekilişte **her oyuncu bir
+büyüme ve bir küçülme** alır, yani şans uzun vadede kimseye yontmaz. Etkiler bilerek
+küçük tutulmuştur — bir ralliyi renklendirir, maçı belirlemez. Her golden sonra bütün
+etkiler sıfırlanır, yani hiçbir avantaj bir sonraki başlama vuruşuna taşınmaz.
+
+Mod seçimi **hem aynı cihazda hem online** geçerlidir; online oyunda odayı kuran seçer
+ve iki istemciye de bildirilir. Fizik sunucuda koştuğu için sopa boyutları her karede
+anlık görüntüyle birlikte gelir — iki oyuncu asla farklı bir sopa görmez.
+
+### Başlama vuruşu
+
+Her başlama vuruşundan önce **3 – 2 – 1** sayımı akar (toplam 2,5 saniye) ve bu sürede
+**iki sopa da kilitlidir**: sopalar kendi başlangıç noktalarında durur, girdi yok
+sayılır. Böylece sayım sırasındaki kaydırmalar lag gibi görünmez ve top canlanır
+canlanmaz tam hızda süzülen bir sopayla bedava şut atılamaz. Aynı sayım maç başında,
+her golden sonra ve devre arasından dönüşte kullanılır.
 
 **Bitiş skoru:** Maç başlamadan önce **5 / 6 / 7 / 8** seçebilir ya da kutuya
-istediğin sayıyı (1–15) yazabilirsin. Online oyunda skoru oda sahibi belirler.
+istediğin sayıyı (1–15) yazabilirsin. Online oyunda **bütün kuralları** (bitiş skoru,
+mod, devre arası) oda sahibi belirler; lobide değiştirebilir, rakibe anında yansır ve
+rakip aynı kuralları soluk (değiştirilemez) halde görür.
 Seçtiğin skorun altında *"4 golde devre → 7 golde biter"* satırı, maçın nasıl
 ilerleyeceğini önceden gösterir.
 
-**Devre:** Aynı telefondaki maçlarda, önde giden oyuncu bitiş skorunun yarısına
-(`ceil(hedef / 2)`) ulaştığında maç durur ve **telefonu 180° çevirin** ekranı gelir.
-Uyarı ekranın iki ucuna da basılır, böylece karşılıklı oturan iki oyuncu da düz okur.
-*Çevirdik, Devam* denince saha da, skor tablosu da yarım tur döner: alt yarı yukarı,
-üst yarı aşağı geçer. Böylece ekranın bir yanındaki dokunmatik farkları maçın
-tamamını etkilemez — herkes iki tarafı da oynar. Devre bir maçta bir kez olur.
+**Devre:** Açık olduğunda, önde giden oyuncu bitiş skorunun yarısına
+(`ceil(hedef / 2)`) ulaştığında maç durur. Devre arası artık **iki modda da, hem aynı
+cihazda hem online** çalışır ve kurulum ekranından kapatılabilir.
+
+*Aynı cihazda:* **telefonu/iPad'i 180° çevirin** ekranı gelir. Uyarı ekranın iki ucuna
+da basılır, böylece karşılıklı oturan iki oyuncu da düz okur. *Çevirdik, Devam* denince
+saha da, skor tablosu da yarım tur döner: alt yarı yukarı, üst yarı aşağı geçer.
+Böylece ekranın bir yanındaki dokunmatik farkları maçın tamamını etkilemez.
+
+*Online:* çevrilecek bir cihaz yok, o yüzden devre sadece kısa bir moladır. İki oyuncu
+da **Hazırım** deyince ikinci yarı başlar; biri masadan kalkarsa maç 25 saniye sonra
+kendiliğinden devam eder, yani kimse diğerini rehin tutamaz.
+
+Devre bir maçta bir kez olur.
 
 **Ayarlar (⚙️):**
 
@@ -141,8 +193,8 @@ Topun arkasındaki hareket hüzmesi, **topa en son vuran sopanın rengini** alı
 toptan çok daha saydamdır — havadaki şutun kimin olduğu bir bakışta okunur.
 
 Bütün bunlar **iOS uygulamasında da aynen** var: aynı zeminler, aynı top renkleri,
-aynı sopa/parmak ayarları, aynı devre akışı. Uygulamada ana menünün altındaki
-⚙️ satırına dokun.
+aynı sopa/parmak ayarları, aynı modlar, aynı devre akışı. Uygulamada ana menünün
+altındaki **Ayarlar** satırına dokun.
 
 Rakip bağlantısı koparsa maç duraklar, skorlar korunur ve aynı kodla geri dönebilir.
 
@@ -175,8 +227,13 @@ blok yapar, enerji üretmez. Sopa hızının topa aktarımı normal boyunca
 Hepsi `web/engine.js` dosyasının en üstündeki sabitlerden ayarlanabilir ve
 `ios/AirHockey/Engine.swift` içindeki `Field` ile birebir aynı tutulmalıdır.
 
-Sopa yarıçapı artık maça özeldir (`new Game({ target, padR, halftime })`); sunucu
-oda kurulurken oda sahibinden alır ve iki istemciye de bildirir.
+Maç kuralları oyuna özeldir (`new Game({ target, padR, halftime, mode })`); sunucu
+oda kurulurken oda sahibinden alır ve iki istemciye de bildirir. Şanslı modda sopa
+yarıçapı ralli içinde değiştiği için her anlık görüntü iki yarıçapı da taşır
+(`rm` = benimki, `ro` = rakibinki) — istemci hiçbir şey tahmin etmez.
+
+Sayım sırasında `setInput` hiç kabul edilmez, yani sopa kilidi de otoriter taraftadır;
+istemcideki dondurma yalnızca görüntüyü sunucuyla aynı tutmak içindir.
 
 ---
 

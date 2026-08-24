@@ -18,7 +18,7 @@ struct RootView: View {
         .overlay(alignment: .bottom) {
             if let t = m.toast {
                 Text(t)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: sz(14), weight: .semibold))
                     .foregroundStyle(T.txt)
                     .padding(.horizontal, 20).padding(.vertical, 13)
                     .background(T.bg2, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -48,16 +48,16 @@ struct MenuView: View {
 
             VStack(spacing: -6) {
                 Text("AIR")
-                    .font(.system(size: 56, weight: .black, design: .rounded))
+                    .font(.system(size: sz(56), weight: .black, design: .rounded))
                     .foregroundStyle(T.me)
                     .shadow(color: T.me.opacity(PAL.glow ? 0.6 : 0), radius: 24)
                 Text("HOCKEY")
-                    .font(.system(size: 56, weight: .black, design: .rounded))
+                    .font(.system(size: sz(56), weight: .black, design: .rounded))
                     .foregroundStyle(T.txt)
             }
 
             Text("Oda kodunu paylaş, anında oyna.\nKayıt yok, indirme yok.")
-                .font(.system(size: 14))
+                .font(.system(size: sz(14)))
                 .foregroundStyle(T.dim)
                 .multilineTextAlignment(.center)
 
@@ -68,18 +68,18 @@ struct MenuView: View {
                 .buttonStyle(PrimaryButton())
 
                 Button { m.go(.local) } label: {
-                    row(icon: "iphone.gen3", title: "Aynı Telefonda 2 Kişi", sub: "Tek ekran, çift dokunuş")
+                    row(icon: Device.isPad ? "ipad.gen2" : "iphone.gen3", title: Device.sameDevice, sub: "Tek ekran, çift dokunuş")
                 }
                 .buttonStyle(PlainButton())
             }
             .padding(.top, 6)
 
             HStack(spacing: 12) {
-                Text("Adın").font(.system(size: 13, weight: .semibold)).foregroundStyle(T.dim)
+                Text("Adın").font(.system(size: sz(13), weight: .semibold)).foregroundStyle(T.dim)
                 TextField("Oyuncu", text: $name)
                     .textInputAutocapitalization(.words)
                     .autocorrectionDisabled()
-                    .font(.system(size: 15))
+                    .font(.system(size: sz(15)))
                     .padding(.horizontal, 14).frame(minHeight: 44)
                     .background(T.card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(T.line))
@@ -89,27 +89,40 @@ struct MenuView: View {
             Spacer()
 
             Button { m.showSettings = true } label: {
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 8, height: 8)
-                        .shadow(color: statusColor, radius: 5)
-                    Text(statusText).font(.system(size: 12)).foregroundStyle(T.dim)
-                    Image(systemName: "gearshape.fill").font(.system(size: 11)).foregroundStyle(T.dim)
-                }
+                Text("Ayarlar")
+                    .font(.system(size: sz(16), weight: .bold))
+                    .foregroundStyle(T.txt)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .overlay(alignment: .leading) {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: sz(17)))
+                            .foregroundStyle(T.dim)
+                            .padding(.leading, 18)
+                    }
+                    .background(T.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(T.line))
+            }
+            .buttonStyle(.plain)
+
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 8, height: 8)
+                    .shadow(color: statusColor, radius: 5)
+                Text(statusText).font(.system(size: sz(12))).foregroundStyle(T.dim)
             }
         }
         .padding(.horizontal, 20)
-        .frame(maxWidth: 430)
+        .frame(maxWidth: Device.column)
         .onAppear { if name.isEmpty && m.myName != "Oyuncu" { name = m.myName } }
     }
 
     private func row(icon: String, title: String, sub: String) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: icon).font(.system(size: 22))
+            Image(systemName: icon).font(.system(size: sz(22)))
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 16, weight: .bold))
-                Text(sub).font(.system(size: 12, weight: .medium)).opacity(0.7)
+                Text(title).font(.system(size: sz(16), weight: .bold))
+                Text(sub).font(.system(size: sz(12), weight: .medium)).opacity(0.7)
             }
             Spacer()
         }
@@ -144,26 +157,32 @@ struct OnlineView: View {
         ScrollView {
             VStack(spacing: 16) {
                 Text("Online Oyna")
-                    .font(.system(size: 24, weight: .bold)).foregroundStyle(T.txt)
+                    .font(.system(size: sz(24), weight: .bold)).foregroundStyle(T.txt)
                     .padding(.top, 24)
 
                 card {
-                    Text("Oda Oluştur").font(.system(size: 17, weight: .bold)).foregroundStyle(T.txt)
+                    Text("Oda Oluştur").font(.system(size: sz(17), weight: .bold)).foregroundStyle(T.txt)
                     Text("Sen kur, kodu arkadaşına gönder.")
-                        .font(.system(size: 13)).foregroundStyle(T.dim)
+                        .font(.system(size: sz(13))).foregroundStyle(T.dim)
                     ScorePicker(value: $m.pendingTarget)
+                    ModePicker(value: $m.pendingMode)
+                    OptionToggle(title: "Devre arası", blurb: "Yarı yolda kısa mola",
+                                 isOn: $m.pendingHalf)
+                    MatchPlan(target: m.pendingTarget, enabled: m.pendingHalf)
                     Button("Oda Oluştur") { m.createRoom() }.buttonStyle(PrimaryButton())
                 }
+                .onChange(of: m.pendingMode) { _, v in Prefs.shared.mode = v }
+                .onChange(of: m.pendingHalf) { _, v in Prefs.shared.half = v }
 
                 card {
-                    Text("Odaya Katıl").font(.system(size: 17, weight: .bold)).foregroundStyle(T.txt)
+                    Text("Odaya Katıl").font(.system(size: sz(17), weight: .bold)).foregroundStyle(T.txt)
                     Text("Arkadaşının gönderdiği 4 haneli kodu gir.")
-                        .font(.system(size: 13)).foregroundStyle(T.dim)
+                        .font(.system(size: sz(13))).foregroundStyle(T.dim)
                     TextField("ABCD", text: $m.joinCode)
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
                         .multilineTextAlignment(.center)
-                        .font(.system(size: 34, weight: .black, design: .rounded))
+                        .font(.system(size: sz(34), weight: .black, design: .rounded))
                         .tracking(12)
                         .foregroundStyle(T.txt)
                         .focused($codeFocused)
@@ -181,7 +200,7 @@ struct OnlineView: View {
                 Button("← Geri") { m.go(.menu) }.buttonStyle(GhostButton())
             }
             .padding(.horizontal, 20)
-            .frame(maxWidth: 430)
+            .frame(maxWidth: Device.column)
             .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.interactively)
@@ -207,12 +226,16 @@ struct LobbyView: View {
     }
 
     var body: some View {
+        CenteredScroll { lobby }
+    }
+
+    private var lobby: some View {
         VStack(spacing: 16) {
-            Spacer()
-            Text("Oda Kodu").font(.system(size: 24, weight: .bold)).foregroundStyle(T.txt)
+            Spacer(minLength: 0)
+            Text("Oda Kodu").font(.system(size: sz(24), weight: .bold)).foregroundStyle(T.txt)
 
             Text(m.code)
-                .font(.system(size: 68, weight: .black, design: .rounded))
+                .font(.system(size: sz(68), weight: .black, design: .rounded))
                 .tracking(10)
                 .foregroundStyle(T.me)
                 .shadow(color: T.me.opacity(0.5), radius: 30)
@@ -234,7 +257,7 @@ struct LobbyView: View {
 
                 ShareLink(item: inviteText) {
                     Text("Paylaş").frame(maxWidth: .infinity)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: sz(16), weight: .semibold))
                         .foregroundStyle(T.txt)
                         .frame(minHeight: 58)
                         .background(T.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -244,27 +267,34 @@ struct LobbyView: View {
 
             HStack(spacing: 12) {
                 slot(name: m.myName, sub: "Sen", color: T.me, waiting: false)
-                Text("VS").font(.system(size: 12, weight: .heavy)).foregroundStyle(T.dim)
+                Text("VS").font(.system(size: sz(12), weight: .heavy)).foregroundStyle(T.dim)
                 slot(name: m.foePresent ? m.foeName : "Bekleniyor…",
                      sub: m.foePresent ? "Hazır" : "Kodu paylaş",
                      color: T.foe, waiting: !m.foePresent)
             }
 
-            if m.mySide == "a" {
-                ScorePicker(value: Binding(get: { m.target }, set: { m.changeTarget($0) }))
-                Text("Skoru sen belirliyorsun. Rakip katılınca oyun başlar.")
-                    .font(.system(size: 13)).foregroundStyle(T.dim)
+            VStack(alignment: .leading, spacing: 12) {
+                ScorePicker(value: Binding(get: { m.target }, set: { m.changeTarget($0) }),
+                            editable: m.isHost)
+                ModePicker(value: Binding(get: { m.gameMode }, set: { m.changeMode($0) }),
+                           editable: m.isHost)
+                OptionToggle(title: "Devre arası", blurb: "Yarı yolda kısa mola",
+                             isOn: Binding(get: { m.halfAt > 0 }, set: { m.changeHalftime($0) }),
+                             editable: m.isHost)
+                MatchPlan(target: m.target, enabled: m.halfAt > 0)
+                Text(m.isHost
+                     ? "Kuralları sen belirliyorsun. Rakip katılınca oyun başlar."
+                     : "Oda sahibi kuralları belirledi.")
+                    .font(.system(size: sz(13))).foregroundStyle(T.dim)
                     .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                Text("Oda sahibi \(m.target) golde bitecek şekilde ayarladı.")
-                    .font(.system(size: 13)).foregroundStyle(T.dim)
             }
 
-            Spacer()
+            Spacer(minLength: 0)
             Button("← Odadan Çık") { m.leaveLobby() }.buttonStyle(GhostButton())
         }
         .padding(.horizontal, 20)
-        .frame(maxWidth: 430)
+        .frame(maxWidth: Device.column)
+        .frame(maxWidth: .infinity)
     }
 
     private func slot(name: String, sub: String, color: Color, waiting: Bool) -> some View {
@@ -273,8 +303,8 @@ struct LobbyView: View {
                 .fill(waiting ? Color(red: 0.227, green: 0.271, blue: 0.376) : color)
                 .frame(width: 26, height: 26)
                 .shadow(color: waiting ? .clear : color, radius: 10)
-            Text(name).font(.system(size: 14, weight: .bold)).foregroundStyle(T.txt).lineLimit(1)
-            Text(sub).font(.system(size: 11)).foregroundStyle(T.dim)
+            Text(name).font(.system(size: sz(14), weight: .bold)).foregroundStyle(T.txt).lineLimit(1)
+            Text(sub).font(.system(size: sz(11))).foregroundStyle(T.dim)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16).padding(.horizontal, 10)
@@ -291,32 +321,45 @@ struct LocalView: View {
     @ObservedObject var m: GameModel
 
     var body: some View {
-        VStack(spacing: 18) {
-            Spacer()
-            Text("Aynı Telefonda 2 Kişi")
-                .font(.system(size: 24, weight: .bold)).foregroundStyle(T.txt)
+        CenteredScroll { setup }
+    }
 
-            (Text("Telefonu aranıza koyun.\n")
+    private var setup: some View {
+        VStack(spacing: 18) {
+            Spacer(minLength: 0)
+            Text(Device.sameDevice)
+                .font(.system(size: sz(24), weight: .bold)).foregroundStyle(T.txt)
+
+            (Text("\(Device.itAccCap) aranıza koyun.\n")
              + Text("Alt yarı").foregroundColor(T.me)
              + Text(" bir oyuncunun, ")
              + Text("üst yarı").foregroundColor(T.foe)
              + Text(" diğerinin."))
-                .font(.system(size: 14))
+                .font(.system(size: sz(14)))
                 .foregroundStyle(T.dim)
                 .multilineTextAlignment(.center)
 
             ScorePicker(value: $m.localTarget)
-            MatchPlan(target: m.localTarget)
-            Text("Devrede telefonu 180° çevirirsiniz — herkes bir yarıyı da diğer taraftan oynar.")
-                .font(.system(size: 13))
-                .foregroundStyle(T.dim)
-                .multilineTextAlignment(.center)
+            ModePicker(value: $m.localMode)
+            OptionToggle(title: "Devre arası", blurb: "Yarı yolda \(Device.itAcc) çevirin",
+                         isOn: $m.localHalf)
+            MatchPlan(target: m.localTarget, enabled: m.localHalf)
+            if m.localHalf {
+                Text("Devrede \(Device.itAcc) 180° çevirirsiniz — herkes bir yarıyı da diğer taraftan oynar.")
+                    .font(.system(size: sz(13)))
+                    .foregroundStyle(T.dim)
+                    .multilineTextAlignment(.center)
+            }
             Button("Başlat") { m.startLocal() }.buttonStyle(PrimaryButton())
-            Spacer()
+            Spacer(minLength: 0)
             Button("← Geri") { m.go(.menu) }.buttonStyle(GhostButton())
         }
         .padding(.horizontal, 20)
-        .frame(maxWidth: 430)
+        .padding(.vertical, 12)
+        .frame(maxWidth: Device.column)
+        .frame(maxWidth: .infinity)
+        .onChange(of: m.localMode) { _, v in Prefs.shared.mode = v }
+        .onChange(of: m.localHalf) { _, v in Prefs.shared.half = v }
     }
 }
 
@@ -360,10 +403,10 @@ struct SettingsView: View {
                                    pick: { prefs.padIndex = Int($0) ?? 1 })
 
                         Text("Parmak Boşluğu")
-                            .font(.system(size: 17, weight: .bold)).foregroundStyle(T.txt)
+                            .font(.system(size: sz(17), weight: .bold)).foregroundStyle(T.txt)
                             .padding(.top, 4)
                         Text("Sopa parmağının biraz ilerisinde durur; böylece topu ve sopayı görürsün.")
-                            .font(.system(size: 13)).foregroundStyle(T.dim)
+                            .font(.system(size: sz(13))).foregroundStyle(T.dim)
                         OptionGrid(columns: 4,
                                    items: gripNames.enumerated().map { (String($0.offset), $0.element) },
                                    selection: String(prefs.gripIndex),
@@ -373,7 +416,7 @@ struct SettingsView: View {
                         MalletPreview(finger: $finger)
                             .frame(height: 170)
                         Text("\(padSizeNames[prefs.padIndex]) sopa · parmak boşluğu \(gripNames[prefs.gripIndex].lowercased()) — kesikli daire parmağın.")
-                            .font(.system(size: 13)).foregroundStyle(T.dim)
+                            .font(.system(size: sz(13))).foregroundStyle(T.dim)
                     }
 
                     card("Sunucu", "Oyunun çalıştığı adres. Aynı Wi-Fi'da test için http://192.168.1.20:8080") {
@@ -381,7 +424,7 @@ struct SettingsView: View {
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .keyboardType(.URL)
-                            .font(.system(size: 15))
+                            .font(.system(size: sz(15)))
                             .padding(.horizontal, 14).frame(minHeight: 44)
                             .background(T.card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(T.line))
@@ -389,14 +432,14 @@ struct SettingsView: View {
                         Toggle("Ses ve titreşim", isOn: Binding(
                             get: { Sound.shared.enabled },
                             set: { Sound.shared.enabled = $0 }))
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: sz(15), weight: .semibold))
                             .foregroundStyle(T.txt)
                             .tint(T.me)
                     }
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
-                .frame(maxWidth: 460)
+                .frame(maxWidth: Device.isPad ? 620 : 460)
                 .frame(maxWidth: .infinity)
             }
             .background(Backdrop())
@@ -418,8 +461,8 @@ struct SettingsView: View {
     private func card<C: View>(_ title: String, _ hint: String,
                                @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.system(size: 17, weight: .bold)).foregroundStyle(T.txt)
-            Text(hint).font(.system(size: 13)).foregroundStyle(T.dim)
+            Text(title).font(.system(size: sz(17), weight: .bold)).foregroundStyle(T.txt)
+            Text(hint).font(.system(size: sz(13))).foregroundStyle(T.dim)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -452,7 +495,7 @@ private struct OptionGrid: View {
                             HStack(spacing: 7) {
                                 swatch(key)
                                 Text(label)
-                                    .font(.system(size: 14, weight: .heavy))
+                                    .font(.system(size: sz(14), weight: .heavy))
                                     .lineLimit(1).minimumScaleFactor(0.8)
                             }
                             .frame(maxWidth: .infinity, minHeight: 50)
@@ -548,4 +591,22 @@ private struct MalletPreview: View {
 
     @State private var width: CGFloat = 320
     private func scale() -> Double { Double(width) / Field.W }
+}
+
+
+/// Scrolls when the content is taller than the screen and centres it when it
+/// is not — a phone-height form marooned at the top of an iPad reads as broken.
+struct CenteredScroll<C: View>: View {
+    @ViewBuilder let content: C
+
+    var body: some View {
+        GeometryReader { geo in
+            ScrollView {
+                content
+                    .padding(.vertical, 12)
+                    .frame(minHeight: geo.size.height - 24)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+    }
 }

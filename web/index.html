@@ -43,7 +43,7 @@
       <input id="i-name" type="text" maxlength="14" placeholder="Oyuncu" autocomplete="off" autocapitalize="words" spellcheck="false">
     </label>
 
-    <button class="btn btn-ghost" id="b-settings">⚙️ Ayarlar — tema, sopa boyutu</button>
+    <button class="btn btn-ghost btn-gear" id="b-settings"><span class="gear-ico">⚙️</span>Ayarlar</button>
   </div>
   <footer class="foot"><span id="conn-dot" class="dot"></span><span id="conn-txt">Bağlanıyor…</span></footer>
 </section>
@@ -65,6 +65,22 @@
           <button class="chip" data-v="8">8</button>
           <input class="chip chip-input" id="t-online" type="number" inputmode="numeric" min="1" max="15" placeholder="…">
         </div>
+      </div>
+      <div class="scorepick" id="mode-online">
+        <span class="scorepick-label">Oyun modu</span>
+        <div class="chips">
+          <button class="chip chip-mode" data-v="klasik"><b>Klasik</b><small>Kurallar sabit</small></button>
+          <button class="chip chip-mode" data-v="sansli"><b>Şanslı</b><small>Sopalar büyür, buz değişir</small></button>
+        </div>
+      </div>
+      <button class="toggle is-on" id="half-online" role="switch" aria-checked="true">
+        <span class="toggle-txt"><b>Devre arası</b><small id="half-online-sub">Yarı yolda kısa mola</small></span>
+        <span class="toggle-knob"></span>
+      </button>
+      <div class="plan" id="plan-online">
+        <span class="plan-half"><b>4</b> golde <i>devre</i></span>
+        <span class="plan-arrow">→</span>
+        <span class="plan-end"><b>7</b> golde <i>biter</i></span>
       </div>
       <button class="btn btn-primary" id="b-create">Oda Oluştur</button>
     </div>
@@ -96,16 +112,35 @@
       <div class="pslot" id="slot-b"><i></i><b id="p-b">Bekleniyor…</b><small id="p-b-sub">Kodu paylaş</small></div>
     </div>
 
-    <div class="scorepick" id="pick-lobby">
-      <span class="scorepick-label">Kaç golde biter?</span>
-      <div class="chips">
-        <button class="chip" data-v="5">5</button>
-        <button class="chip" data-v="6">6</button>
-        <button class="chip is-on" data-v="7">7</button>
-        <button class="chip" data-v="8">8</button>
-        <input class="chip chip-input" id="t-lobby" type="number" inputmode="numeric" min="1" max="15" placeholder="…">
+    <div class="rules" id="lobby-rules">
+      <div class="scorepick" id="pick-lobby">
+        <span class="scorepick-label">Kaç golde biter?</span>
+        <div class="chips">
+          <button class="chip" data-v="5">5</button>
+          <button class="chip" data-v="6">6</button>
+          <button class="chip is-on" data-v="7">7</button>
+          <button class="chip" data-v="8">8</button>
+          <input class="chip chip-input" id="t-lobby" type="number" inputmode="numeric" min="1" max="15" placeholder="…">
+        </div>
       </div>
-      <p class="hint" id="lobby-hostnote">Skoru sen belirliyorsun. Rakip katılınca oyun başlar.</p>
+      <div class="scorepick" id="mode-lobby">
+        <span class="scorepick-label">Oyun modu</span>
+        <div class="chips">
+          <button class="chip chip-mode" data-v="klasik"><b>Klasik</b><small>Kurallar sabit</small></button>
+          <button class="chip chip-mode" data-v="sansli"><b>Şanslı</b><small>Sopalar büyür, buz değişir</small></button>
+        </div>
+      </div>
+      <button class="toggle is-on" id="half-lobby" role="switch" aria-checked="true">
+        <span class="toggle-txt"><b>Devre arası</b><small id="half-lobby-sub">Yarı yolda kısa mola</small></span>
+        <span class="toggle-knob"></span>
+      </button>
+      <p class="hint" id="lobby-hostnote">Kuralları sen belirliyorsun. Rakip katılınca oyun başlar.</p>
+    </div>
+    <p class="hint hidden" id="lobby-guestnote">Oda sahibi kuralları belirledi.</p>
+    <div class="plan" id="plan-lobby">
+      <span class="plan-half"><b>4</b> golde <i>devre</i></span>
+      <span class="plan-arrow">→</span>
+      <span class="plan-end"><b>7</b> golde <i>biter</i></span>
     </div>
 
     <button class="btn btn-ghost" id="b-lobby-leave">← Odadan Çık</button>
@@ -117,21 +152,34 @@
   <div class="stack">
     <h2 class="title">Aynı Telefonda 2 Kişi</h2>
     <p class="tagline">Telefonu aranıza koyun.<br><b class="c-me">Alt yarı</b> bir oyuncunun, <b class="c-foe">üst yarı</b> diğerinin.</p>
-    <div class="scorepick" id="pick-local">
-      <span class="scorepick-label">Kaç golde biter?</span>
-      <div class="chips">
-        <button class="chip" data-v="5">5</button>
-        <button class="chip" data-v="6">6</button>
-        <button class="chip is-on" data-v="7">7</button>
-        <button class="chip" data-v="8">8</button>
-        <input class="chip chip-input" id="t-local" type="number" inputmode="numeric" min="1" max="15" placeholder="…">
+    <div class="rules">
+      <div class="scorepick" id="pick-local">
+        <span class="scorepick-label">Kaç golde biter?</span>
+        <div class="chips">
+          <button class="chip" data-v="5">5</button>
+          <button class="chip" data-v="6">6</button>
+          <button class="chip is-on" data-v="7">7</button>
+          <button class="chip" data-v="8">8</button>
+          <input class="chip chip-input" id="t-local" type="number" inputmode="numeric" min="1" max="15" placeholder="…">
+        </div>
       </div>
+      <div class="scorepick" id="mode-local">
+        <span class="scorepick-label">Oyun modu</span>
+        <div class="chips">
+          <button class="chip chip-mode" data-v="klasik"><b>Klasik</b><small>Kurallar sabit</small></button>
+          <button class="chip chip-mode" data-v="sansli"><b>Şanslı</b><small>Sopalar büyür, buz değişir</small></button>
+        </div>
+      </div>
+      <button class="toggle is-on" id="half-local" role="switch" aria-checked="true">
+        <span class="toggle-txt"><b>Devre arası</b><small id="half-local-sub">Yarı yolda telefonu çevirin</small></span>
+        <span class="toggle-knob"></span>
+      </button>
       <div class="plan" id="plan-local">
         <span class="plan-half"><b>4</b> golde <i>devre</i></span>
         <span class="plan-arrow">→</span>
         <span class="plan-end"><b>7</b> golde <i>biter</i></span>
       </div>
-      <p class="hint">Devrede telefonu 180° çevirirsiniz — herkes bir yarıyı da diğer taraftan oynar.</p>
+      <p class="hint" id="hint-local-half">Devrede telefonu 180° çevirirsiniz — herkes bir yarıyı da diğer taraftan oynar.</p>
     </div>
     <button class="btn btn-primary" id="b-local-start">Başlat</button>
     <button class="btn btn-ghost" data-back="s-menu">← Geri</button>
@@ -210,13 +258,14 @@
   <div class="center-msg hidden" id="cmsg"><span id="cmsg-txt"></span></div>
 
   <div class="overlay half hidden" id="half">
-    <div class="half-msg half-flip">
+    <div class="half-msg half-flip" id="half-top">
       <b>DEVRE</b>
       <span>Telefonu 180° çevirin</span>
     </div>
 
     <div class="half-core">
-      <div class="half-icon" aria-hidden="true">
+      <div class="half-title" id="half-title">DEVRE</div>
+      <div class="half-icon" id="half-icon" aria-hidden="true">
         <svg viewBox="0 0 120 120">
           <rect class="hi-phone" x="42" y="26" width="36" height="68" rx="8"/>
           <line class="hi-line" x1="53" y1="35" x2="67" y2="35"/>
@@ -228,11 +277,12 @@
         </svg>
       </div>
       <div class="half-score" id="half-score">0 – 0</div>
-      <p class="half-note">Alt taraf yukarı, üst taraf aşağı.<br>Böylece herkes ekranın iki yanını da kullanır.</p>
+      <p class="half-note" id="half-note">Alt taraf yukarı, üst taraf aşağı.<br>Böylece herkes ekranın iki yanını da kullanır.</p>
       <button class="btn btn-primary" id="b-half">Çevirdik, Devam</button>
+      <p class="hint hidden" id="half-wait">Rakip bekleniyor…</p>
     </div>
 
-    <div class="half-msg">
+    <div class="half-msg" id="half-bot">
       <b>DEVRE</b>
       <span>Telefonu 180° çevirin</span>
     </div>
