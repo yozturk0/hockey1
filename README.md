@@ -53,6 +53,16 @@ Aşağıdakilerden **birini** seç. Üçü de ücretsiz katmanda WebSocket deste
 
 Ücretsiz katman 15 dakika hareketsizlikten sonra uyur; ilk açılış ~30 saniye sürer.
 
+**Güncellemeler nasıl yayına çıkar:** Render, bağlı olduğun dalı (varsayılan `main`)
+izler. O dala her `git push`'ta yeni sürümü kendisi derleyip yayına alır — ayrıca bir
+şey yapmana gerek yok. Yani bir dalda çalışıp PR açtıysan, **PR'ı `main`'e merge
+ettiğin an** dağıtım kendiliğinden başlar; Render panosundaki *Events* sekmesinden
+ilerlemesini izleyebilirsin (~1-2 dakika). Otomatik dağıtımı kapattıysan aynı panodan
+*Manual Deploy → Deploy latest commit* de diyebilirsin.
+
+Yeni sürüm çıktığında tarayıcıda eski dosyaların takılı kalmaması için `index.html`,
+`app.js` ve `style.css` `no-cache` ile sunulur; sayfayı yenilemek yeterlidir.
+
 ### Fly.io (uykuya dalmaz, Frankfurt bölgesi = Türkiye'ye düşük ping)
 
 ```bash
@@ -120,11 +130,19 @@ tamamını etkilemez — herkes iki tarafı da oynar. Devre bir maçta bir kez o
 | Ayar | Ne işe yarar |
 |---|---|
 | **Zemin** | Krem · Buz · Çim · Gece. İlk üçü açık ve sade — çocuklar için daha rahat okunur. Gece, eski neon görünüm. |
+| **Top rengi** | Tema · Siyah · Kırmızı · Turuncu · Sarı · Yeşil · Mavi · Mor · Beyaz. *Tema*, seçtiğin sahaya uygun olanı kullanır. Top hangi renkte olursa olsun ince bir kontur alır, böylece koyu sahada siyah top da kaybolmaz. |
 | **Sopa boyutu** | Mini / Küçük / Orta / Büyük. Parmağın sopayı tamamen kapatıyorsa küçült. Online oyunda odayı kuranın seçimi iki oyuncu için de geçerlidir. |
 | **Parmak boşluğu** | Sopa, parmağının biraz ilerisinde durur; parmağın altında kaybolmaz. Kapalı / Az / Orta / Çok. |
 
 Ayarlardaki önizlemede parmağını sürükleyerek dene: kesikli daire parmağının
 gerçek temas alanını gösterir.
+
+Topun arkasındaki hareket hüzmesi, **topa en son vuran sopanın rengini** alır ve
+toptan çok daha saydamdır — havadaki şutun kimin olduğu bir bakışta okunur.
+
+Bütün bunlar **iOS uygulamasında da aynen** var: aynı zeminler, aynı top renkleri,
+aynı sopa/parmak ayarları, aynı devre akışı. Uygulamada ana menünün altındaki
+⚙️ satırına dokun.
 
 Rakip bağlantısı koparsa maç duraklar, skorlar korunur ve aynı kodla geri dönebilir.
 
@@ -146,11 +164,14 @@ saniyede 60 kez durum anlık görüntüsü alır.
 - **iOS ve web aynı fiziği paylaşır:** `web/engine.js` ile `ios/AirHockey/Engine.swift`
   birebir aynı davranışa sahiptir (aynı telefonda 2 kişi modu için).
 
-**Vuruş sertliği:** Topun tepe hızı `PUCK_MAX`, sopanın *pasif* sekme katsayısı
-`PAD_REST`. Sopa topun içine doğru sürüldüğünde sekme katsayısı `SMASH_BONUS` kadar
-artar (`SMASH_REF` hızında tavana vurur) — yani sert bir vuruş gerçekten patlar,
-ama topun önüne park edilen sopa hâlâ sadece blok yapar, enerji üretmez.
-Sopa hızının topa aktarımı normal boyunca `PAD_TRANSFER`, teğet boyunca `PAD_DRAG`.
+**Vuruş sertliği:** Topun tepe hızı `PUCK_MAX` (255 — saha ~0,8 saniyede geçilir),
+sopanın *pasif* sekme katsayısı `PAD_REST`. Sopa topun içine doğru sürüldüğünde
+sekme katsayısı `SMASH_BONUS` kadar artar (`SMASH_REF` hızında tavana vurur) —
+yani sert bir vuruş gerçekten patlar, ama topun önüne park edilen sopa hâlâ sadece
+blok yapar, enerji üretmez. Sopa hızının topa aktarımı normal boyunca
+`PAD_TRANSFER`, teğet boyunca `PAD_DRAG`.
+
+Şu anki eğri: hafif dokunuş ~45, orta vuruş ~140, tam vuruş 255 birim/sn.
 Hepsi `web/engine.js` dosyasının en üstündeki sabitlerden ayarlanabilir ve
 `ios/AirHockey/Engine.swift` içindeki `Field` ile birebir aynı tutulmalıdır.
 

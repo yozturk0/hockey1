@@ -23,16 +23,16 @@ const GX0 = (W - GOAL_W) / 2;   // 33
 const GX1 = (W + GOAL_W) / 2;   // 67
 const POST_R = 1.5;
 
-const PUCK_MAX = 340;           // a smash crosses the rink in ~0.6 s
-const PUCK_MIN_AFTER_HIT = 40;
+const PUCK_MAX = 255;           // a smash crosses the rink in ~0.8 s
+const PUCK_MIN_AFTER_HIT = 30;
 const PAD_MAX_SPEED = 420;      // clamp so a teleporting finger can't break physics
 const FRICTION = 0.94;          // multiplicative per second
 const WALL_REST = 0.93;
-const PAD_REST = 0.96;          // restitution of a *passive* mallet (a block)
-const SMASH_REF = 190;          // mallet speed at which the strike bonus tops out
-const SMASH_BONUS = 0.62;       // extra restitution on a full-force strike
-const PAD_TRANSFER = 0.30;      // mallet speed injected along the contact normal
-const PAD_DRAG = 0.16;          // ...and sideways, so a brushed puck curls away
+const PAD_REST = 0.88;          // restitution of a *passive* mallet (a block)
+const SMASH_REF = 150;          // mallet speed at which the strike bonus tops out
+const SMASH_BONUS = 0.45;       // extra restitution on a full-force strike
+const PAD_TRANSFER = 0.22;      // mallet speed injected along the contact normal
+const PAD_DRAG = 0.12;          // ...and sideways, so a brushed puck curls away
 
 const TICK = 1 / 60;
 const COUNTDOWN_START = 3000;

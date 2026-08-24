@@ -19,8 +19,25 @@ const PAD_NAMES = ['Mini', 'Küçük', 'Orta', 'Büyük'];
 const GRIPS = [0, 6, 10, 15];
 const THEMES = ['krem', 'buz', 'cim', 'gece'];
 
+/* Puck colours. `g` is the highlight -> body -> rim gradient; `rgb` seeds the
+   motion trail when nobody has struck the puck yet. "tema" keeps whatever the
+   chosen rink was designed around. */
+const PUCK_COLORS = {
+  tema:    { name: 'Tema',    g: null },
+  siyah:   { name: 'Siyah',   g: ['#6e6e6e', '#232323', '#080808'], rgb: '35,35,35' },
+  kirmizi: { name: 'Kırmızı', g: ['#ffa898', '#e23b26', '#7f1a0e'], rgb: '226,59,38' },
+  turuncu: { name: 'Turuncu', g: ['#ffd39a', '#f0871e', '#8f4c08'], rgb: '240,135,30' },
+  sari:    { name: 'Sarı',    g: ['#fff6d8', '#ffd166', '#b8801a'], rgb: '255,209,102' },
+  yesil:   { name: 'Yeşil',   g: ['#a8f0c8', '#20a05e', '#0c4d2c'], rgb: '32,160,94' },
+  mavi:    { name: 'Mavi',    g: ['#b6dcff', '#1f7ae0', '#0b3c78'], rgb: '31,122,224' },
+  mor:     { name: 'Mor',     g: ['#dcbcff', '#8b3ee0', '#431775'], rgb: '139,62,224' },
+  beyaz:   { name: 'Beyaz',   g: ['#ffffff', '#eef1f6', '#9aa4b2'], rgb: '238,241,246' },
+};
+const PUCK_KEYS = Object.keys(PUCK_COLORS);
+
 const Cfg = {
   theme: 'krem',
+  puck: 'tema',
   pad: 1,
   grip: 2,      // a fingertip is ~6 units across, so 10 clears the mallet
 
@@ -28,6 +45,7 @@ const Cfg = {
     try {
       const j = JSON.parse(localStorage.getItem('ah_cfg') || '{}');
       if (THEMES.indexOf(j.theme) >= 0) this.theme = j.theme;
+      if (PUCK_KEYS.indexOf(j.puck) >= 0) this.puck = j.puck;
       if (j.pad >= 0 && j.pad < PAD_SIZES.length) this.pad = j.pad | 0;
       if (j.grip >= 0 && j.grip < GRIPS.length) this.grip = j.grip | 0;
     } catch (_) { /* first run, or storage blocked */ }
@@ -35,11 +53,14 @@ const Cfg = {
   save() {
     try {
       localStorage.setItem('ah_cfg', JSON.stringify(
-        { theme: this.theme, pad: this.pad, grip: this.grip }));
+        { theme: this.theme, puck: this.puck, pad: this.pad, grip: this.grip }));
     } catch (_) {}
   },
   padR() { return PAD_SIZES[this.pad]; },
   lead() { return GRIPS[this.grip]; },
+  /* Falls back to the rink's own puck when the player has not picked one. */
+  puckG() { return PUCK_COLORS[this.puck].g || PAL.puck; },
+  puckRGB() { return PUCK_COLORS[this.puck].rgb || PAL.trail; },
 };
 Cfg.load();
 
@@ -96,12 +117,20 @@ const PALETTES = {
   },
 };
 let PAL = PALETTES[Cfg.theme];
+/* The two mallet colours as "r,g,b", ready to drop into an rgba() string. */
+let RGB = { me: '0,0,0', foe: '0,0,0' };
+
+const hexRGB = (hex) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+};
 
 const THEME_META = { krem: '#efe1c2', buz: '#e9f1fa', cim: '#e8f0d9', gece: '#070b14' };
 
 function applyTheme(name) {
   Cfg.theme = THEMES.indexOf(name) >= 0 ? name : 'krem';
   PAL = PALETTES[Cfg.theme];
+  RGB = { me: hexRGB(PAL.me), foe: hexRGB(PAL.foe) };
   document.body.dataset.theme = Cfg.theme;
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', THEME_META[Cfg.theme]);
@@ -134,6 +163,9 @@ const R = {
   me:   { x: W / 2, y: H * 0.78 },
   foe:  { x: W / 2, y: H * 0.22 },
   trail: [],
+  /* The motion beam is tinted by the mallet that last struck the puck, so you
+     can read at a glance whose shot is in flight. */
+  trailCol: null,
   flash: 0,
   shake: 0,
 };
@@ -316,7 +348,12 @@ function handleSnapshot(s) {
   // Events: identical audio cues on both clients, driven by the server.
   for (const e of s.e) {
     const type = e[0], ey = e[2], inten = e[3];
-    if (type === 0) { Snd.hit(inten); R.flash = 1; R.shake = Math.min(1, inten / PUCK_MAX) * 0.6; }
+    if (type === 0) {
+      Snd.hit(inten);
+      R.flash = 1;
+      R.shake = Math.min(1, inten / PUCK_MAX) * 0.6;
+      R.trailCol = ey >= H / 2 ? RGB.me : RGB.foe;
+    }
     else if (type === 1) { Snd.wall(inten); }
     else if (type === 2) {
       const mine = ey < H / 2;               // the puck went into THEIR net
@@ -561,29 +598,40 @@ function drawShadow(px, py, pr) {
 }
 
 function drawPuck(p) {
-  // trail
+  // Motion beam, in the striker's colour and lighter than the puck itself.
+  const beam = R.trailCol || Cfg.puckRGB();
   for (let i = 0; i < R.trail.length; i++) {
     const t = R.trail[i];
-    const a = (i / R.trail.length) * (PAL.glow ? 0.30 : 0.17);
+    const f = i / R.trail.length;
+    const a = f * 0.24;
     cx.beginPath();
-    cx.arc(fx(t.x), fy(t.y), fs(PUCK_R) * (0.35 + 0.6 * (i / R.trail.length)), 0, Math.PI * 2);
-    cx.fillStyle = `rgba(${PAL.trail},${a})`;
+    cx.arc(fx(t.x), fy(t.y), fs(PUCK_R) * (0.35 + 0.6 * f), 0, Math.PI * 2);
+    cx.fillStyle = `rgba(${beam},${a})`;
     cx.fill();
   }
 
+  const col = Cfg.puckG();
   const px = fx(p.x), py = fy(p.y), pr = fs(PUCK_R);
   drawShadow(px, py, pr);
   cx.save();
-  if (PAL.glow) { cx.shadowColor = 'rgba(255,214,110,.9)'; cx.shadowBlur = fs(7); }
+  if (PAL.glow) { cx.shadowColor = col[1]; cx.shadowBlur = fs(7); }
   const g = cx.createRadialGradient(px - pr * 0.3, py - pr * 0.4, pr * 0.1, px, py, pr);
-  g.addColorStop(0, PAL.puck[0]);
-  g.addColorStop(0.55, PAL.puck[1]);
-  g.addColorStop(1, PAL.puck[2]);
+  g.addColorStop(0, col[0]);
+  g.addColorStop(0.55, col[1]);
+  g.addColorStop(1, col[2]);
   cx.beginPath();
   cx.arc(px, py, pr, 0, Math.PI * 2);
   cx.fillStyle = g;
   cx.fill();
   cx.restore();
+
+  // A hairline in the opposite direction to the rink keeps a black puck on a
+  // dark rink (or a white one on ice) from disappearing.
+  cx.beginPath();
+  cx.arc(px, py, pr - Math.max(0.4, fs(0.12)), 0, Math.PI * 2);
+  cx.strokeStyle = PAL.glow ? 'rgba(255,255,255,.5)' : 'rgba(0,0,0,.22)';
+  cx.lineWidth = Math.max(1, fs(0.3));
+  cx.stroke();
 }
 
 function drawPaddle(p, color, dim) {
@@ -762,8 +810,11 @@ function stepLocal(dt) {
 
   for (const e of g.events) {
     const type = e[0], ey = e[2], inten = e[3];
-    if (type === 0) { Snd.hit(inten); R.shake = Math.min(1, inten / PUCK_MAX) * 0.6; }
-    else if (type === 1) Snd.wall(inten);
+    if (type === 0) {
+      Snd.hit(inten);
+      R.shake = Math.min(1, inten / PUCK_MAX) * 0.6;
+      R.trailCol = ey >= H / 2 ? RGB.me : RGB.foe;
+    } else if (type === 1) Snd.wall(inten);
     else if (type === 2) {
       const bottomScored = ey < H / 2;
       Snd.goal(true);
@@ -891,8 +942,31 @@ wirePicker('pick-lobby', 't-lobby', (v) => {
 });
 updatePlan(localTarget);
 
+(function buildPuckChips() {
+  const g = $('pick-puck');
+  for (const key of PUCK_KEYS) {
+    const c = PUCK_COLORS[key];
+    const b = document.createElement('button');
+    b.className = 'chip chip-puck';
+    b.dataset.v = key;
+    b.textContent = c.name;
+    // "Tema" has no fixed colour of its own; show the rink's current puck.
+    b.style.setProperty('--swatch',
+      c.g ? `linear-gradient(135deg,${c.g[0]},${c.g[2]})` : 'conic-gradient(#e23b26,#ffd166,#1f7ae0,#232323,#e23b26)');
+    g.appendChild(b);
+  }
+}());
+
+let repaintPuckChips = null;
+
 wireOptions('pick-theme', () => Cfg.theme, (v) => {
   applyTheme(v);
+  Cfg.save();
+  if (repaintPuckChips) repaintPuckChips();
+  drawPreview();
+});
+repaintPuckChips = wireOptions('pick-puck', () => Cfg.puck, (v) => {
+  Cfg.puck = v;
   Cfg.save();
   drawPreview();
 });
@@ -939,8 +1013,15 @@ function drawPreview() {
   const padY = clamp(pvFinger.y - Cfg.lead(), PV_TOP + Cfg.padR(), H - Cfg.padR());
   const padX = clamp(pvFinger.x, Cfg.padR(), W - Cfg.padR());
 
-  // the puck, for scale
-  pvx.fillStyle = PAL.puck[1];
+  // the puck, for scale and to preview its colour
+  const puckCol = Cfg.puckG();
+  const pg = pvx.createRadialGradient(
+    X(W / 2) - PUCK_R * PV_S * 0.3, Y(PV_TOP + 9) - PUCK_R * PV_S * 0.4, 2,
+    X(W / 2), Y(PV_TOP + 9), PUCK_R * PV_S);
+  pg.addColorStop(0, puckCol[0]);
+  pg.addColorStop(0.55, puckCol[1]);
+  pg.addColorStop(1, puckCol[2]);
+  pvx.fillStyle = pg;
   pvx.beginPath(); pvx.arc(X(W / 2), Y(PV_TOP + 9), PUCK_R * PV_S, 0, Math.PI * 2); pvx.fill();
 
   // mallet
@@ -995,6 +1076,7 @@ function resetRender() {
   R.foe.x = foePad.x = foePad.tx = W / 2;
   R.foe.y = foePad.y = foePad.ty = H * 0.22;
   R.trail.length = 0;
+  R.trailCol = null;
   R.shake = 0;
   pointers.clear();
   App.lastCd = -1;

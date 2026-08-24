@@ -7,22 +7,24 @@ enum Field {
     static let W: Double = 100
     static let H: Double = 200
     static let puckR: Double = 3.4
-    static let padR: Double = 5.6
+    static let padR: Double = 5.6             // default mallet radius; per-game overridable
+    static let padRMin: Double = 3.4
+    static let padRMax: Double = 8.2
     static let goalW: Double = 34
     static let gx0: Double = (W - goalW) / 2
     static let gx1: Double = (W + goalW) / 2
     static let postR: Double = 1.5
 
-    static let puckMax: Double = 340          // a smash crosses the rink in ~0.6 s
-    static let puckMinAfterHit: Double = 40
+    static let puckMax: Double = 255          // a smash crosses the rink in ~0.8 s
+    static let puckMinAfterHit: Double = 30
     static let padMaxSpeed: Double = 420
     static let friction: Double = 0.94
     static let wallRest: Double = 0.93
-    static let padRest: Double = 0.96         // restitution of a *passive* mallet
-    static let smashRef: Double = 190         // mallet speed where the bonus tops out
-    static let smashBonus: Double = 0.62      // extra restitution on a full-force strike
-    static let padTransfer: Double = 0.30     // mallet speed injected along the normal
-    static let padDrag: Double = 0.16         // ...and sideways, so a brush curls the puck
+    static let padRest: Double = 0.88         // restitution of a *passive* mallet
+    static let smashRef: Double = 150         // mallet speed where the bonus tops out
+    static let smashBonus: Double = 0.45      // extra restitution on a full-force strike
+    static let padTransfer: Double = 0.22     // mallet speed injected along the normal
+    static let padDrag: Double = 0.12         // ...and sideways, so a brush curls the puck
 
     static let countdownStart: Double = 3000
     static let countdownGoal: Double = 1600
@@ -30,7 +32,7 @@ enum Field {
 }
 
 enum GameState: Int {
-    case lobby = 0, countdown = 1, playing = 2, paused = 3, over = 4
+    case lobby = 0, countdown = 1, playing = 2, paused = 3, over = 4, halftime = 5
 }
 
 /// 0 = paddle hit, 1 = wall/post, 2 = goal
@@ -55,7 +57,18 @@ final class Paddle {
 }
 
 final class Engine {
+    /// Half time lands when the leader reaches half the winning score. Short
+    /// matches (1-2 goals) are over before a break would make any sense.
+    static func halftimeFor(_ target: Int) -> Int {
+        target >= 3 ? Int((Double(target) / 2).rounded(.up)) : 0
+    }
+
     var target: Int
+    /// Mallet radius for *this* match; the menu lets players pick it.
+    let padR: Double
+    /// Score at which the phone gets turned around, or 0 when there is no break.
+    private(set) var halfAt: Int
+    private(set) var halfDone = false
     var scoreA = 0
     var scoreB = 0
     var state: GameState = .lobby
@@ -70,8 +83,10 @@ final class Engine {
 
     private var stallMs: Double = 0
 
-    init(target: Int) {
+    init(target: Int, padR: Double = Field.padR, halftime: Bool = false) {
         self.target = target
+        self.padR = clampd(padR, Field.padRMin, Field.padRMax)
+        self.halfAt = halftime ? Engine.halftimeFor(target) : 0
         resetPuck(dir: Bool.random() ? 1 : -1)
     }
 
@@ -94,8 +109,14 @@ final class Engine {
         countdown = ms
     }
 
+    /// Players have turned the phone around; kick the second half off.
+    func resumeHalftime() {
+        if state == .halftime { startCountdown() }
+    }
+
     func restart() {
         scoreA = 0; scoreB = 0; winner = nil
+        halfDone = false
         resetPaddles()
         resetPuck(dir: Bool.random() ? 1 : -1)
         startCountdown()
@@ -103,10 +124,10 @@ final class Engine {
 
     func setInput(side: String, x: Double, y: Double) {
         let p = side == "a" ? padA : padB
-        p.tx = clampd(x, Field.padR, Field.W - Field.padR)
+        p.tx = clampd(x, padR, Field.W - padR)
         p.ty = side == "a"
-            ? clampd(y, Field.H / 2 + Field.padR, Field.H - Field.padR)
-            : clampd(y, Field.padR, Field.H / 2 - Field.padR)
+            ? clampd(y, Field.H / 2 + padR, Field.H - padR)
+            : clampd(y, padR, Field.H / 2 - padR)
     }
 
     private func ev(_ t: Int, _ x: Double, _ y: Double, _ i: Double) {
@@ -228,7 +249,7 @@ final class Engine {
     private func collidePaddle(_ p: Paddle) {
         let dx = puck.x - p.x, dy = puck.y - p.y
         var dist = (dx * dx + dy * dy).squareRoot()
-        let minD = Field.puckR + Field.padR
+        let minD = Field.puckR + padR
         guard dist < minD else { return }
         if dist == 0 { dist = 0.0001 }
 
@@ -286,6 +307,14 @@ final class Engine {
         }
         // Conceding side gets the puck: A defends y=H, B defends y=0.
         resetPuck(dir: side == "a" ? -1 : 1)
+
+        // Half time: freeze here until the players say they have turned the phone.
+        if halfAt > 0 && !halfDone && max(scoreA, scoreB) >= halfAt {
+            halfDone = true
+            state = .halftime
+            return
+        }
+
         startCountdown(Field.countdownGoal)
     }
 }

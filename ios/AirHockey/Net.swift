@@ -22,8 +22,8 @@ enum NetStatus: Equatable {
 
 protocol NetDelegate: AnyObject {
     func netStatus(_ s: NetStatus)
-    func netJoined(code: String, side: String, target: Int)
-    func netRoom(target: Int, myName: String, foeName: String, foePresent: Bool)
+    func netJoined(code: String, side: String, target: Int, pad: Double)
+    func netRoom(target: Int, pad: Double, myName: String, foeName: String, foePresent: Bool)
     func netPeer(online: Bool)
     func netError(_ message: String)
     func netSnapshot(_ s: Snapshot)
@@ -118,7 +118,11 @@ final class Net: NSObject {
         t.send(.string(s)) { _ in /* the receive loop notices a dead socket */ }
     }
 
-    func create(target: Int) { send(["t": "create", "target": target, "name": myName]) }
+    /// The host's mallet-size preference becomes the room's; the server clamps
+    /// it and tells both clients what it ended up as.
+    func create(target: Int, pad: Double) {
+        send(["t": "create", "target": target, "pad": pad, "name": myName])
+    }
 
     func join(code: String) {
         wantRoom = code
@@ -177,7 +181,9 @@ final class Net: NSObject {
             let code = obj["code"] as? String ?? ""
             mySide = obj["side"] as? String ?? "a"
             wantRoom = code
-            delegate?.netJoined(code: code, side: mySide, target: obj["target"] as? Int ?? 7)
+            delegate?.netJoined(code: code, side: mySide,
+                                target: obj["target"] as? Int ?? 7,
+                                pad: obj["pad"] as? Double ?? 0)
 
         case "room":
             let names = obj["names"] as? [String: Any] ?? [:]
@@ -187,6 +193,7 @@ final class Net: NSObject {
             let other = (names[mySide == "a" ? "b" : "a"] as? String) ?? "Rakip"
             let foeHere = mySide == "a" ? bHere : aHere
             delegate?.netRoom(target: obj["target"] as? Int ?? 7,
+                              pad: obj["pad"] as? Double ?? 0,
                               myName: mine,
                               foeName: foeHere ? other : "Rakip",
                               foePresent: foeHere)

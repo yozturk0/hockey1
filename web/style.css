@@ -231,6 +231,14 @@ input::placeholder{color:var(--dim);opacity:.7}
 .chip-theme[data-v="cim"]::before{background:#e8f0d9}
 .chip-theme[data-v="gece"]::before{background:#0d1424}
 
+.chip-puck{font-size:14px;flex:1 1 28%;height:52px}
+.chip-puck::before{
+  content:"";display:inline-block;vertical-align:-3px;margin-right:7px;
+  width:15px;height:15px;border-radius:50%;
+  background:var(--swatch,linear-gradient(135deg,#888,#333));
+  border:1px solid rgba(0,0,0,.22);
+}
+
 /* the "4 golde devre -> 7 golde biter" plan strip */
 .plan{
   display:flex;align-items:center;justify-content:center;gap:10px;
