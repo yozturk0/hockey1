@@ -15,6 +15,10 @@ struct RootView: View {
             case .game:   GameView(m: m)
             }
         }
+        .overlay(alignment: .topTrailing) {
+            // The rink has its own copy in the HUD, next to the close button.
+            if m.screen != .game { ReconnectButton(m: m).padding(.trailing, 14) }
+        }
         .overlay(alignment: .bottom) {
             if let t = m.toast {
                 Text(t)
@@ -33,6 +37,38 @@ struct RootView: View {
         .sheet(isPresented: $m.showSettings) { SettingsView(m: m) }
         .onAppear { Sound.shared.start() }
         .onOpenURL { m.openDeepLink($0) }
+    }
+}
+
+/// Sunucuya yeniden bağlan. Always in the same top-right spot, so a frozen
+/// match is one tap from being live again instead of a wait.
+struct ReconnectButton: View {
+    @ObservedObject var m: GameModel
+    @State private var spin = false
+
+    var body: some View {
+        Button {
+            spin.toggle()
+            m.reconnectNow()
+        } label: {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: sz(15), weight: .bold))
+                .foregroundStyle(tint)
+                .rotationEffect(.degrees(spin ? 360 : 0))
+                .animation(.easeOut(duration: 0.5), value: spin)
+                .frame(width: 40, height: 40)
+                .background(T.bg.opacity(0.6), in: Circle())
+                .overlay(Circle().stroke(T.line))
+        }
+        .buttonStyle(.plain)
+        .disabled(!m.canReconnect)
+        .opacity(m.canReconnect ? 1 : 0.4)
+    }
+
+    /// The button doubles as the connection lamp: red once the socket is gone.
+    private var tint: Color {
+        if case .failed = m.status { return T.foe }
+        return m.status == .connected ? T.dim : T.gold
     }
 }
 
@@ -369,8 +405,6 @@ struct SettingsView: View {
     @ObservedObject var m: GameModel
     @ObservedObject private var prefs = Prefs.shared
     @Environment(\.dismiss) private var dismiss
-    /// Where the demo fingertip sits in the preview, in field units.
-    @State private var finger = Vec(x: Field.W / 2, y: Field.H - 16)
 
     var body: some View {
         NavigationStack {
@@ -393,30 +427,6 @@ struct SettingsView: View {
                                    selection: prefs.puck,
                                    swatch: { key in AnyView(PuckDot(key: key)) },
                                    pick: { prefs.puck = $0 })
-                    }
-
-                    card("Sopa Boyutu", "Parmağın sopayı kapatıyorsa küçült.") {
-                        OptionGrid(columns: 4,
-                                   items: padSizeNames.enumerated().map { (String($0.offset), $0.element) },
-                                   selection: String(prefs.padIndex),
-                                   swatch: { _ in AnyView(EmptyView()) },
-                                   pick: { prefs.padIndex = Int($0) ?? 1 })
-
-                        Text("Parmak Boşluğu")
-                            .font(.system(size: sz(17), weight: .bold)).foregroundStyle(T.txt)
-                            .padding(.top, 4)
-                        Text("Sopa parmağının biraz ilerisinde durur; böylece topu ve sopayı görürsün.")
-                            .font(.system(size: sz(13))).foregroundStyle(T.dim)
-                        OptionGrid(columns: 4,
-                                   items: gripNames.enumerated().map { (String($0.offset), $0.element) },
-                                   selection: String(prefs.gripIndex),
-                                   swatch: { _ in AnyView(EmptyView()) },
-                                   pick: { prefs.gripIndex = Int($0) ?? 2 })
-
-                        MalletPreview(finger: $finger)
-                            .frame(height: 170)
-                        Text("\(padSizeNames[prefs.padIndex]) sopa · parmak boşluğu \(gripNames[prefs.gripIndex].lowercased()) — kesikli daire parmağın.")
-                            .font(.system(size: sz(13))).foregroundStyle(T.dim)
                     }
 
                     card("Sunucu", "Oyunun çalıştığı adres. Aynı Wi-Fi'da test için http://192.168.1.20:8080") {
@@ -528,71 +538,6 @@ private struct PuckDot: View {
             .overlay(Circle().stroke(.black.opacity(0.22)))
     }
 }
-
-/// Drag the dashed circle — it is roughly a real fingertip — to see whether it
-/// swallows the mallet at the current size and grip.
-private struct MalletPreview: View {
-    @Binding var finger: Vec
-    @ObservedObject private var prefs = Prefs.shared
-    /// The preview shows the bottom 55 units of the rink.
-    private let top = Field.H - 55
-
-    var body: some View {
-        Canvas { ctx, size in
-            let s = size.width / Field.W
-            func X(_ x: Double) -> CGFloat { CGFloat(x) * s }
-            func Y(_ y: Double) -> CGFloat { CGFloat(y - top) * s }
-            func dot(_ x: Double, _ y: Double, _ r: Double) -> Path {
-                Path(ellipseIn: CGRect(x: X(x) - CGFloat(r) * s, y: Y(y) - CGFloat(r) * s,
-                                       width: CGFloat(r) * 2 * s, height: CGFloat(r) * 2 * s))
-            }
-
-            ctx.fill(Path(CGRect(origin: .zero, size: size)),
-                     with: .linearGradient(Gradient(colors: [PAL.ice[1], PAL.ice[0]]),
-                                           startPoint: .zero,
-                                           endPoint: CGPoint(x: 0, y: size.height)))
-            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(T.me.opacity(0.06)))
-
-            var goal = Path()
-            goal.move(to: CGPoint(x: X(Field.gx0), y: size.height - 4))
-            goal.addLine(to: CGPoint(x: X(Field.gx1), y: size.height - 4))
-            ctx.stroke(goal, with: .color(T.me),
-                       style: StrokeStyle(lineWidth: 7, lineCap: .round))
-
-            ctx.fill(dot(Field.W / 2, top + 9, Field.puckR),
-                     with: .radialGradient(Gradient(colors: prefs.puckStops),
-                                           center: CGPoint(x: X(Field.W / 2), y: Y(top + 9)),
-                                           startRadius: 0, endRadius: CGFloat(Field.puckR) * s * 1.4))
-
-            let r = prefs.padR
-            let px = clampd(finger.x, r, Field.W - r)
-            let py = clampd(finger.y - prefs.lead, top + r, Field.H - r)
-            ctx.fill(dot(px, py, r), with: .color(T.me))
-            ctx.fill(dot(px, py, r * 0.52), with: .color(PAL.padInner))
-
-            // a real fingertip is roughly 12 field units across on a phone
-            ctx.fill(dot(finger.x, finger.y, 6), with: .color(.black.opacity(0.18)))
-            ctx.stroke(dot(finger.x, finger.y, 6), with: .color(.black.opacity(0.45)),
-                       style: StrokeStyle(lineWidth: 2.5, dash: [5, 4]))
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(T.line))
-        .contentShape(Rectangle())
-        .gesture(DragGesture(minimumDistance: 0).onChanged { g in
-            // The canvas is Field.W units wide, so one point is 1/s units.
-            finger = Vec(x: clampd(Double(g.location.x) / scale(), 0, Field.W),
-                         y: clampd(Double(g.location.y) / scale() + top, top, Field.H))
-        })
-        .background(GeometryReader { geo in
-            Color.clear.onAppear { width = geo.size.width }
-                .onChange(of: geo.size.width) { _, w in width = w }
-        })
-    }
-
-    @State private var width: CGFloat = 320
-    private func scale() -> Double { Double(width) / Field.W }
-}
-
 
 /// Scrolls when the content is taller than the screen and centres it when it
 /// is not — a phone-height form marooned at the top of an iPad reads as broken.

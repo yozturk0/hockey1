@@ -14,7 +14,10 @@ const W = 100;
 const H = 200;
 
 const PUCK_R = 3.4;
-const PAD_R = 5.6;              // default mallet radius; per-game overridable
+/* Every match is played with the same, biggest mallet: one shared feel, and
+   the two sides of an online match are never unequal. Lucky mode still grows
+   and shrinks it mid-rally, within the bounds below. */
+const PAD_R = 6.8;
 const PAD_R_MIN = 3.4;
 const PAD_R_MAX = 8.2;
 
@@ -23,8 +26,10 @@ const GX0 = (W - GOAL_W) / 2;   // 33
 const GX1 = (W + GOAL_W) / 2;   // 67
 const POST_R = 1.5;
 
-const PUCK_MAX = 255;           // a smash crosses the rink in ~0.8 s
-const PUCK_MIN_AFTER_HIT = 30;
+/* Puck speeds are deliberately calm: the whole scale below was pulled down
+   by 30 % so a rally stays readable for a child's eyes and thumbs. */
+const PUCK_MAX = 178;           // a smash crosses the rink in ~1.1 s
+const PUCK_MIN_AFTER_HIT = 21;
 const PAD_MAX_SPEED = 420;      // clamp so a teleporting finger can't break physics
 const FRICTION = 0.94;          // multiplicative per second
 const WALL_REST = 0.93;
@@ -33,6 +38,11 @@ const SMASH_REF = 150;          // mallet speed at which the strike bonus tops o
 const SMASH_BONUS = 0.45;       // extra restitution on a full-force strike
 const PAD_TRANSFER = 0.22;      // mallet speed injected along the contact normal
 const PAD_DRAG = 0.12;          // ...and sideways, so a brushed puck curls away
+/* The one tempo knob. A mallet drives the puck with this fraction of its own
+   speed, which - together with the equally scaled face-off and clamp speeds
+   above - makes every rally play out 30 % slower without touching how quickly
+   a finger can move the mallet itself. */
+const PUCK_TEMPO = 0.7;
 
 const TICK = 1 / 60;
 /* One countdown length for every restart - kickoff, goals and half time all
@@ -133,8 +143,8 @@ class Game {
     this.puck.y = H / 2;
     // A wide face-off angle keeps the puck from flying straight into the
     // defender who just reset to centre.
-    this.puck.vx = (Math.random() < 0.5 ? -1 : 1) * (16 + Math.random() * 30);
-    this.puck.vy = dir * (48 + Math.random() * 22);
+    this.puck.vx = (Math.random() < 0.5 ? -1 : 1) * (11 + Math.random() * 21);
+    this.puck.vy = dir * (34 + Math.random() * 15);
     this.stallMs = 0;
   }
 
@@ -416,8 +426,8 @@ class Game {
       if (this.stallMs > STALL_LIMIT) {
         this.stallMs = 0;
         const dir = k.y < H / 2 ? 1 : -1;
-        k.vx = (Math.random() - 0.5) * 40;
-        k.vy = dir * 55;
+        k.vx = (Math.random() - 0.5) * 28;
+        k.vy = dir * 38;
       }
     } else {
       this.stallMs = 0;
@@ -460,12 +470,16 @@ class Game {
     // How hard the mallet is driving *into* the puck along the contact normal.
     // Only a real swing earns the bonus - parking the mallet in front of a
     // fast puck must stay a block, not a free rocket.
-    const swing = Math.max(0, p.vx * nx + p.vy * ny);
+    // The mallet is *felt* by the puck at the game's tempo, not at the raw
+    // speed the finger is moving; that is what keeps the rink calm.
+    const pvx = p.vx * PUCK_TEMPO;
+    const pvy = p.vy * PUCK_TEMPO;
+    const swing = Math.max(0, pvx * nx + pvy * ny);
     const punch = clamp(swing / SMASH_REF, 0, 1);
 
     // Reflect the puck's velocity relative to the moving paddle
-    const rvx = k.vx - p.vx;
-    const rvy = k.vy - p.vy;
+    const rvx = k.vx - pvx;
+    const rvy = k.vy - pvy;
     const vn = rvx * nx + rvy * ny;
     if (vn < 0) {
       const rest = PAD_REST + SMASH_BONUS * punch;
@@ -475,8 +489,8 @@ class Game {
 
     // Inject the paddle's own motion - this is what makes a smash feel like a
     // smash. Straight-on drive counts far more than a sideways brush.
-    k.vx += nx * swing * PAD_TRANSFER + (p.vx - nx * swing) * PAD_DRAG;
-    k.vy += ny * swing * PAD_TRANSFER + (p.vy - ny * swing) * PAD_DRAG;
+    k.vx += nx * swing * PAD_TRANSFER + (pvx - nx * swing) * PAD_DRAG;
+    k.vy += ny * swing * PAD_TRANSFER + (pvy - ny * swing) * PAD_DRAG;
 
     // Never let a hit die on contact
     let sp = Math.hypot(k.vx, k.vy);

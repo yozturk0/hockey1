@@ -275,13 +275,16 @@ struct GameView: View {
         .padding(.vertical, 10)
         .allowsHitTesting(false)
         .overlay(alignment: .topTrailing) {
-            Button { m.exitGame() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: sz(15), weight: .bold))
-                    .foregroundStyle(T.dim)
-                    .frame(width: 40, height: 40)
-                    .background(T.bg.opacity(0.6), in: Circle())
-                    .overlay(Circle().stroke(T.line))
+            HStack(spacing: 8) {
+                if m.mode == .online { ReconnectButton(m: m) }
+                Button { m.exitGame() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: sz(15), weight: .bold))
+                        .foregroundStyle(T.dim)
+                        .frame(width: 40, height: 40)
+                        .background(T.bg.opacity(0.6), in: Circle())
+                        .overlay(Circle().stroke(T.line))
+                }
             }
             .padding(.trailing, 12)
         }

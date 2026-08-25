@@ -45,7 +45,7 @@
 
     <button class="btn btn-ghost btn-gear" id="b-settings"><span class="gear-ico">⚙️</span>Ayarlar</button>
   </div>
-  <footer class="foot"><span id="conn-dot" class="dot"></span><span id="conn-txt">Bağlanıyor…</span></footer>
+<footer class="foot"><span id="conn-dot" class="dot"></span><span id="conn-txt">Bağlanıyor…</span></footer>
 </section>
 
 <!-- ============ ONLINE SEÇİM ============ -->
@@ -208,29 +208,6 @@
       <div class="chips chips-wrap" id="pick-puck"></div>
     </div>
 
-    <div class="card">
-      <h3>Sopa Boyutu</h3>
-      <p class="hint">Parmağın sopayı kapatıyorsa küçült.</p>
-      <div class="chips" id="pick-pad">
-        <button class="chip" data-v="0">Mini</button>
-        <button class="chip" data-v="1">Küçük</button>
-        <button class="chip" data-v="2">Orta</button>
-        <button class="chip" data-v="3">Büyük</button>
-      </div>
-
-      <h3 style="margin-top:6px">Parmak Boşluğu</h3>
-      <p class="hint">Sopa parmağının biraz ilerisinde durur; böylece topu ve sopayı görürsün.</p>
-      <div class="chips" id="pick-grip">
-        <button class="chip" data-v="0">Kapalı</button>
-        <button class="chip" data-v="1">Az</button>
-        <button class="chip" data-v="2">Orta</button>
-        <button class="chip" data-v="3">Çok</button>
-      </div>
-
-      <canvas class="preview" id="pv" width="600" height="330"></canvas>
-      <p class="hint" id="pv-hint">Önizlemede parmağını sürükleyerek dene.</p>
-    </div>
-
     <button class="btn btn-ghost" data-back="s-menu">← Geri</button>
   </div>
 </section>
@@ -252,6 +229,7 @@
         <div class="hud-net"><span id="hud-ping">—</span></div>
       </div>
     </div>
+    <button class="hud-reconnect" id="b-hud-reconnect" aria-label="Sunucuya yeniden bağlan">⟳</button>
     <button class="hud-exit" id="b-exit" aria-label="Çık">✕</button>
   </div>
 
@@ -298,6 +276,11 @@
     </div>
   </div>
 </section>
+
+<!-- Always in the same top-right spot: a frozen match is one tap from live
+     again instead of a wait. The rink has its own copy inside the HUD. -->
+<button class="reconnect" id="b-reconnect" title="Sunucuya yeniden bağlan"
+        aria-label="Sunucuya yeniden bağlan">⟳</button>
 
 <div class="toast hidden" id="toast"></div>
 

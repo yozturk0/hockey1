@@ -85,6 +85,9 @@ final class GameModel: ObservableObject, NetDelegate {
     @Published var toast: String?
     @Published var serverField = Net.defaultServer
     @Published var showSettings = false
+    /// False for three seconds after a manual reconnect. Hammering the button
+    /// would only throw away sockets that never got the chance to open.
+    @Published var canReconnect = true
 
     let net = Net()
     let world = World()
@@ -124,6 +127,21 @@ final class GameModel: ObservableObject, NetDelegate {
         net.connect()
     }
 
+    /// The reconnect button. A dropped socket does come back on its own, but
+    /// the backoff can leave you staring at a dead rink for ten seconds or
+    /// more; this dials again immediately.
+    func reconnectNow() {
+        guard canReconnect else { return }
+        Sound.shared.ui()
+        canReconnect = false
+        net.reconnect()
+        flash("Sunucuya yeniden bağlanılıyor…")
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            self?.canReconnect = true
+        }
+    }
+
     func startOnline() {
         Sound.shared.ui()
         screen = .online
@@ -138,8 +156,7 @@ final class GameModel: ObservableObject, NetDelegate {
             return
         }
         lastState = .lobby
-        net.create(target: pendingTarget, pad: Prefs.shared.padR,
-                   mode: pendingMode, half: pendingHalf)
+        net.create(target: pendingTarget, mode: pendingMode, half: pendingHalf)
     }
 
     func joinRoom() {

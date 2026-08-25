@@ -189,13 +189,11 @@ private let themePucks: [String: [Color]] = [
 
 // MARK: - preferences
 
-/// Mallet radius in field units. The rink is 100 wide, so "Mini" is an
-/// 8 %-wide disc — small enough that a fingertip never hides it completely.
-let padSizes: [Double] = [4.0, 4.8, 5.6, 6.8]
-let padSizeNames = ["Mini", "Küçük", "Orta", "Büyük"]
-/// How far ahead of the fingertip the mallet sits, in field units.
-let gripLeads: [Double] = [0, 6, 10, 15]
-let gripNames = ["Kapalı", "Az", "Orta", "Çok"]
+/// The mallet size (`Field.padR`) and how far ahead of the fingertip it sits
+/// used to be settings; they are now fixed for everyone — the big mallet and
+/// the wide finger gap are simply what plays best, and one shared feel also
+/// means the two sides of an online match are never unequal.
+let gripLead: Double = 15
 
 /// The palette every view and the rink renderer read from. Changed only by
 /// `Prefs.apply()`, which also nudges SwiftUI to redraw.
@@ -206,8 +204,6 @@ final class Prefs: ObservableObject {
 
     @Published var theme: String { didSet { PAL = Palettes.named(theme); save() } }
     @Published var puck: String { didSet { save() } }
-    @Published var padIndex: Int { didSet { save() } }
-    @Published var gripIndex: Int { didSet { save() } }
     /// Last match rules, so the same two people do not re-pick them every time.
     @Published var mode: GameMode { didSet { save() } }
     @Published var half: Bool { didSet { save() } }
@@ -216,8 +212,6 @@ final class Prefs: ObservableObject {
         let d = UserDefaults.standard
         theme = d.string(forKey: "ah_theme") ?? "krem"
         puck = d.string(forKey: "ah_puck") ?? "tema"
-        padIndex = d.object(forKey: "ah_pad") as? Int ?? 1
-        gripIndex = d.object(forKey: "ah_grip") as? Int ?? 2
         mode = GameMode.from(d.string(forKey: "ah_mode"))
         half = d.object(forKey: "ah_half") as? Bool ?? true
         PAL = Palettes.named(theme)
@@ -227,14 +221,12 @@ final class Prefs: ObservableObject {
         let d = UserDefaults.standard
         d.set(theme, forKey: "ah_theme")
         d.set(puck, forKey: "ah_puck")
-        d.set(padIndex, forKey: "ah_pad")
-        d.set(gripIndex, forKey: "ah_grip")
         d.set(mode.rawValue, forKey: "ah_mode")
         d.set(half, forKey: "ah_half")
     }
 
-    var padR: Double { padSizes[min(padIndex, padSizes.count - 1)] }
-    var lead: Double { gripLeads[min(gripIndex, gripLeads.count - 1)] }
+    var padR: Double { Field.padR }
+    var lead: Double { gripLead }
 
     /// Gradient stops for the puck as currently configured.
     var puckStops: [Color] {
