@@ -4,19 +4,18 @@
 'use strict';
 
 const { Game, ST, CONST, halftimeFor, countdownDigit, MODES, FX } = window.AHEngine;
-const { W, H, PUCK_R, GX0, GX1, PUCK_MAX, PAD_MAX_SPEED } = CONST;
+const { W, H, PUCK_R, PAD_R, GX0, GX1, PUCK_MAX, PAD_MAX_SPEED } = CONST;
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 /* ============================ preferences ============================ */
 
-/* Mallet radius in field units. The rink is 100 wide, so "Mini" is a 8%-wide
-   disc — small enough that a fingertip never hides it completely. */
-const PAD_SIZES = [4.0, 4.8, 5.6, 6.8];
-const PAD_NAMES = ['Mini', 'Küçük', 'Orta', 'Büyük'];
-/* How far ahead of the fingertip the mallet sits, in field units. */
-const GRIPS = [0, 6, 10, 15];
+/* The mallet size (PAD_R, from the engine) and how far ahead of the fingertip
+   it sits used to be settings; they are now fixed for everyone — the big mallet
+   and the wide finger gap are simply what plays best, and one shared feel also
+   means the two sides of an online match are never unequal. */
+const GRIP_LEAD = 15;
 const THEMES = ['krem', 'buz', 'cim', 'gece'];
 const MODE_KEYS = [MODES.CLASSIC, MODES.LUCKY];
 
@@ -39,8 +38,6 @@ const PUCK_KEYS = Object.keys(PUCK_COLORS);
 const Cfg = {
   theme: 'krem',
   puck: 'tema',
-  pad: 1,
-  grip: 2,      // a fingertip is ~6 units across, so 10 clears the mallet
   /* Last match rules, so the same two people do not re-pick them every time. */
   mode: MODES.CLASSIC,
   half: true,
@@ -50,8 +47,6 @@ const Cfg = {
       const j = JSON.parse(localStorage.getItem('ah_cfg') || '{}');
       if (THEMES.indexOf(j.theme) >= 0) this.theme = j.theme;
       if (PUCK_KEYS.indexOf(j.puck) >= 0) this.puck = j.puck;
-      if (j.pad >= 0 && j.pad < PAD_SIZES.length) this.pad = j.pad | 0;
-      if (j.grip >= 0 && j.grip < GRIPS.length) this.grip = j.grip | 0;
       if (MODE_KEYS.indexOf(j.mode) >= 0) this.mode = j.mode;
       if (typeof j.half === 'boolean') this.half = j.half;
     } catch (_) { /* first run, or storage blocked */ }
@@ -59,12 +54,11 @@ const Cfg = {
   save() {
     try {
       localStorage.setItem('ah_cfg', JSON.stringify(
-        { theme: this.theme, puck: this.puck, pad: this.pad, grip: this.grip,
-          mode: this.mode, half: this.half }));
+        { theme: this.theme, puck: this.puck, mode: this.mode, half: this.half }));
     } catch (_) {}
   },
-  padR() { return PAD_SIZES[this.pad]; },
-  lead() { return GRIPS[this.grip]; },
+  padR() { return PAD_R; },
+  lead() { return GRIP_LEAD; },
   /* Falls back to the rink's own puck when the player has not picked one. */
   puckG() { return PUCK_COLORS[this.puck].g || PAL.puck; },
   puckRGB() { return PUCK_COLORS[this.puck].rgb || PAL.trail; },
@@ -194,7 +188,10 @@ function show(id) {
   document.querySelectorAll('.screen').forEach((s) => s.classList.add('hidden'));
   $(id).classList.remove('hidden');
   current = id;
-  if (id === 's-set') drawPreview();
+  // The rink carries its own reconnect button inside the HUD, and only an
+  // online match has anything to reconnect to.
+  $('b-reconnect').classList.toggle('hidden', id === 's-game');
+  $('b-hud-reconnect').classList.toggle('hidden', App.mode !== 'online');
 }
 
 let toastTimer = null;
@@ -214,6 +211,10 @@ const Net = {
   wantRoom: null,      // code to re-join after an unexpected drop
   retry: 0,
   pingTimer: null,
+  /* When the last byte arrived. The server pongs every ping, so a socket that
+     has gone quiet for several seconds is dead even if the browser has not
+     noticed yet - which is the state that used to need a reload. */
+  lastRx: 0,
 
   url() {
     const q = new URLSearchParams(location.search).get('server');
@@ -232,9 +233,17 @@ const Net = {
     ws.onopen = () => {
       this.ready = true;
       this.retry = 0;
+      this.lastRx = Date.now();
       setConn('ok', 'Sunucuya bağlı');
       clearInterval(this.pingTimer);
-      this.pingTimer = setInterval(() => this.send({ t: 'p', c: Date.now() }), 2000);
+      this.pingTimer = setInterval(() => {
+        if (Date.now() - this.lastRx > 6000) {
+          setConn('bad', 'Bağlantı koptu');
+          this.reconnect();
+          return;
+        }
+        this.send({ t: 'p', c: Date.now() });
+      }, 2000);
       this.send({ t: 'p', c: Date.now() });
       if (this.wantRoom) {
         this.send({ t: 'join', code: this.wantRoom, name: App.myName });
@@ -242,6 +251,7 @@ const Net = {
     };
 
     ws.onmessage = (ev) => {
+      this.lastRx = Date.now();
       let m;
       try { m = JSON.parse(ev.data); } catch (_) { return; }
       onMessage(m);
@@ -256,6 +266,24 @@ const Net = {
     };
 
     ws.onerror = () => { /* onclose always follows */ };
+  },
+
+  /* Drop whatever we have and dial again right now. This is what the
+     reconnect button does: waiting out a backoff is the one thing a player
+     staring at a frozen rink should never have to do. */
+  reconnect() {
+    const old = this.ws;
+    this.ws = null;
+    this.ready = false;
+    clearInterval(this.pingTimer);
+    if (old) {
+      // Muted first, so the dying socket's onclose cannot schedule a retry
+      // that would race the fresh one.
+      old.onopen = old.onmessage = old.onclose = old.onerror = null;
+      try { old.close(); } catch (_) {}
+    }
+    this.retry = 0;
+    this.connect();
   },
 
   scheduleRetry() {
@@ -273,10 +301,37 @@ const Net = {
 };
 
 function setConn(cls, txt) {
+  // The reconnect buttons double as the connection lamp, so they follow the
+  // footer dot rather than carrying a second, possibly disagreeing state.
+  reconnectButtons().forEach((b) => {
+    b.classList.toggle('bad', cls === 'bad');
+    b.classList.toggle('wait', cls === 'wait');
+    b.title = txt;
+  });
   const d = $('conn-dot'), t = $('conn-txt');
   if (!d) return;
   d.className = 'dot' + (cls === 'ok' ? ' ok' : cls === 'bad' ? ' bad' : '');
   t.textContent = txt;
+}
+
+function reconnectButtons() {
+  return [$('b-reconnect'), $('b-hud-reconnect')].filter(Boolean);
+}
+
+/* One reconnect per three seconds: hammering it would only throw away sockets
+   that never got the chance to open. */
+let reconnectAt = 0;
+function reconnectNow() {
+  if (Date.now() - reconnectAt < 3000) return;
+  reconnectAt = Date.now();
+  Snd.ui();
+  reconnectButtons().forEach((b) => {
+    b.classList.add('busy', 'spin');
+    setTimeout(() => b.classList.remove('spin'), 500);
+    setTimeout(() => b.classList.remove('busy'), 3000);
+  });
+  Net.reconnect();
+  toast('Sunucuya yeniden bağlanılıyor…');
 }
 
 function onMessage(m) {
@@ -1051,7 +1106,7 @@ function wirePicker(groupId, inputId, onChange) {
   inp.addEventListener('blur', () => { if (!inp.value) syncChips(groupId, inputId, App.target); });
 }
 
-/* Simple option rows (theme / mallet size / grip) — no free-text field. */
+/* Simple option rows (theme / puck colour) — no free-text field. */
 function wireOptions(groupId, get, set) {
   const g = $(groupId);
   const paint = () => g.querySelectorAll('.chip[data-v]').forEach((c) => {
@@ -1162,96 +1217,11 @@ wireOptions('pick-theme', () => Cfg.theme, (v) => {
   applyTheme(v);
   Cfg.save();
   if (repaintPuckChips) repaintPuckChips();
-  drawPreview();
 });
 repaintPuckChips = wireOptions('pick-puck', () => Cfg.puck, (v) => {
   Cfg.puck = v;
   Cfg.save();
-  drawPreview();
 });
-wireOptions('pick-pad', () => Cfg.pad, (v) => {
-  Cfg.pad = +v;
-  Cfg.save();
-  if (App.mode !== 'online') { App.padR = Cfg.padR(); App.rMe = App.rFoe = App.padR; }
-  drawPreview();
-});
-wireOptions('pick-grip', () => Cfg.grip, (v) => {
-  Cfg.grip = +v;
-  Cfg.save();
-  drawPreview();
-});
-
-/* ---------------- settings preview ---------------- */
-
-const pv = $('pv');
-const pvx = pv.getContext('2d');
-const PV_S = 6;                 // px per field unit
-const PV_TOP = H - pv.height / PV_S;
-const pvFinger = { x: W / 2, y: H - 16 };
-
-function drawPreview() {
-  const w = pv.width, h = pv.height;
-  const X = (x) => x * PV_S;
-  const Y = (y) => (y - PV_TOP) * PV_S;
-
-  pvx.clearRect(0, 0, w, h);
-  const g = pvx.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, PAL.ice[1]);
-  g.addColorStop(1, PAL.ice[0]);
-  pvx.fillStyle = g;
-  pvx.fillRect(0, 0, w, h);
-
-  // my half tint + goal line
-  pvx.fillStyle = PAL.tintMe;
-  pvx.fillRect(0, 0, w, h);
-  pvx.strokeStyle = PAL.me;
-  pvx.lineWidth = 8; pvx.lineCap = 'round';
-  pvx.beginPath(); pvx.moveTo(X(GX0), h - 4); pvx.lineTo(X(GX1), h - 4); pvx.stroke();
-
-  const r = Cfg.padR() * PV_S;
-  const padY = clamp(pvFinger.y - Cfg.lead(), PV_TOP + Cfg.padR(), H - Cfg.padR());
-  const padX = clamp(pvFinger.x, Cfg.padR(), W - Cfg.padR());
-
-  // the puck, for scale and to preview its colour
-  const puckCol = Cfg.puckG();
-  const pg = pvx.createRadialGradient(
-    X(W / 2) - PUCK_R * PV_S * 0.3, Y(PV_TOP + 9) - PUCK_R * PV_S * 0.4, 2,
-    X(W / 2), Y(PV_TOP + 9), PUCK_R * PV_S);
-  pg.addColorStop(0, puckCol[0]);
-  pg.addColorStop(0.55, puckCol[1]);
-  pg.addColorStop(1, puckCol[2]);
-  pvx.fillStyle = pg;
-  pvx.beginPath(); pvx.arc(X(W / 2), Y(PV_TOP + 9), PUCK_R * PV_S, 0, Math.PI * 2); pvx.fill();
-
-  // mallet
-  pvx.fillStyle = PAL.me;
-  pvx.beginPath(); pvx.arc(X(padX), Y(padY), r, 0, Math.PI * 2); pvx.fill();
-  pvx.fillStyle = PAL.padInner;
-  pvx.beginPath(); pvx.arc(X(padX), Y(padY), r * 0.52, 0, Math.PI * 2); pvx.fill();
-
-  // a real fingertip is roughly 6 field units across on a phone-sized rink
-  pvx.strokeStyle = 'rgba(0,0,0,.45)';
-  pvx.setLineDash([7, 6]);
-  pvx.lineWidth = 3;
-  pvx.beginPath(); pvx.arc(X(pvFinger.x), Y(pvFinger.y), 6 * PV_S, 0, Math.PI * 2); pvx.stroke();
-  pvx.setLineDash([]);
-  pvx.fillStyle = 'rgba(0,0,0,.18)';
-  pvx.beginPath(); pvx.arc(X(pvFinger.x), Y(pvFinger.y), 6 * PV_S, 0, Math.PI * 2); pvx.fill();
-
-  $('pv-hint').textContent =
-    `${PAD_NAMES[Cfg.pad]} sopa · parmak boşluğu ${['kapalı', 'az', 'orta', 'çok'][Cfg.grip]}`
-    + ' — kesikli daire parmağın.';
-}
-
-function pvPoint(e) {
-  const rect = pv.getBoundingClientRect();
-  const sx = pv.width / rect.width;
-  pvFinger.x = clamp(((e.clientX - rect.left) * sx) / PV_S, 0, W);
-  pvFinger.y = clamp(((e.clientY - rect.top) * sx) / PV_S + PV_TOP, PV_TOP, H);
-  drawPreview();
-}
-pv.addEventListener('pointerdown', (e) => { pv.setPointerCapture(e.pointerId); pvPoint(e); e.preventDefault(); });
-pv.addEventListener('pointermove', (e) => { if (e.buttons) { pvPoint(e); e.preventDefault(); } });
 
 /* ============================ game entry ============================ */
 
@@ -1364,7 +1334,7 @@ $('b-create').addEventListener('click', () => {
   App.lastState = -1;
   Net.send({
     t: 'create', target: onlineTarget, mode: onlineMode, half: onlineHalf,
-    pad: Cfg.padR(), name: App.myName,
+    name: App.myName,
   });
 });
 
@@ -1445,7 +1415,8 @@ $('b-again').addEventListener('click', () => {
   setTimeout(() => clearInterval(t), 12000);
 }());
 
+reconnectButtons().forEach((b) => b.addEventListener('click', reconnectNow));
+
 resize();
-drawPreview();
 Net.connect();
 }());

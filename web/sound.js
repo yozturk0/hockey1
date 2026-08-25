@@ -83,6 +83,13 @@
     if (root.navigator && navigator.vibrate) { try { navigator.vibrate(ms); } catch (_) {} }
   }
 
+  /* A puck squeezed between a mallet and a wall - or head-butted at a shallow
+     angle - can legitimately register several contacts in a few hundredths of a
+     second. Physically that is right, but four clacks stacked on top of one
+     another just sound broken, so a burst is heard as the single hit it is. */
+  const HIT_GAP = 0.09;
+  let lastHit = -1, lastWall = -1;
+
   const S = {
     unlock,
     get on() { return enabled; },
@@ -90,7 +97,10 @@
 
     /* Puck meets paddle. speed is in field units/sec (0..PUCK_MAX). */
     hit(speed) {
-      const t = clamp01((speed || 60) / 255);
+      if (!ctx) return;
+      if (now() - lastHit < HIT_GAP) return;
+      lastHit = now();
+      const t = clamp01((speed || 60) / 178);
       const base = 300 + t * 480;
       tone({ type: 'triangle', f0: base * 1.9, f1: base * 0.72, dur: 0.085 + t * 0.05, gain: 0.20 + t * 0.20 });
       tone({ type: 'sine', f0: base * 0.55, f1: base * 0.3, dur: 0.12, gain: 0.13 + t * 0.12, cutoff: 1400 });
@@ -100,8 +110,11 @@
 
     /* Puck meets a wall or a goalpost — duller, quieter. */
     wall(speed) {
-      const t = clamp01((speed || 40) / 255);
+      if (!ctx) return;
+      const t = clamp01((speed || 40) / 178);
       if (t < 0.06) return;
+      if (now() - lastWall < HIT_GAP) return;
+      lastWall = now();
       tone({ type: 'sine', f0: 190 + t * 150, f1: 90, dur: 0.075, gain: 0.09 + t * 0.11, cutoff: 900 });
       noise({ freq: 700 + t * 800, q: 1.6, dur: 0.03, gain: 0.045 + t * 0.07 });
     },

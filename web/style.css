@@ -375,6 +375,26 @@ input::placeholder{color:var(--dim);opacity:.7}
 }
 .hud-exit:active{transform:scale(.92)}
 
+/* Reconnect: in the rink it sits just left of the close button, everywhere
+   else it is the lone control in the top-right corner. */
+.reconnect,.hud-reconnect{
+  position:absolute;top:calc(8px + var(--safe-t));
+  width:40px;height:40px;border-radius:50%;
+  border:1px solid var(--line);background:var(--scrim);
+  color:var(--dim);font-size:18px;line-height:1;cursor:pointer;pointer-events:auto;
+  z-index:50;transition:opacity .2s ease,color .3s ease;
+}
+.reconnect{position:fixed;right:14px}
+.reconnect.hidden,.hud-reconnect.hidden{display:none}
+.hud-reconnect{right:60px}
+.reconnect:active,.hud-reconnect:active{transform:scale(.92)}
+.reconnect.busy,.hud-reconnect.busy{opacity:.4;pointer-events:none}
+/* The button doubles as the connection lamp. */
+.reconnect.bad,.hud-reconnect.bad{color:var(--foe)}
+.reconnect.wait,.hud-reconnect.wait{color:var(--gold)}
+.reconnect.spin,.hud-reconnect.spin{animation:spin .5s ease-out}
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+
 .center-msg{
   position:absolute;top:50%;left:0;right:0;transform:translateY(-50%);
   text-align:center;z-index:6;pointer-events:none;

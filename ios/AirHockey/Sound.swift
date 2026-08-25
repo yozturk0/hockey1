@@ -1,4 +1,5 @@
 import AVFoundation
+import QuartzCore
 import UIKit
 
 /// Procedural audio: every clip is synthesised once at launch, so the app ships
@@ -184,16 +185,31 @@ final class Sound {
         p.scheduleBuffer(buf, at: nil, options: .interrupts, completionHandler: nil)
     }
 
+    /// A puck squeezed between a mallet and a wall - or head-butted at a shallow
+    /// angle - can legitimately register several contacts in a few hundredths of
+    /// a second. Physically that is right, but four clacks stacked on top of one
+    /// another just sound broken, so a burst is heard as the single hit it is.
+    private var lastHitAt: CFTimeInterval = 0
+    private static let hitGap: CFTimeInterval = 0.09
+
     func hit(_ speed: Double) {
+        let now = CACurrentMediaTime()
+        guard now - lastHitAt > Sound.hitGap else { return }
+        lastHitAt = now
         let t = min(1, max(0, speed / Field.puckMax))
         play(hitBuffers[min(7, Int(t * 7.999))])
         if t > 0.55 { heavyHaptic.impactOccurred(intensity: 0.9) }
         else { lightHaptic.impactOccurred(intensity: 0.5 + t * 0.4) }
     }
 
+    private var lastWallAt: CFTimeInterval = 0
+
     func wall(_ speed: Double) {
         let t = min(1, max(0, speed / Field.puckMax))
         guard t > 0.06 else { return }
+        let now = CACurrentMediaTime()
+        guard now - lastWallAt > Sound.hitGap else { return }
+        lastWallAt = now
         play(wallBuffers[min(4, Int(t * 4.999))])
     }
 

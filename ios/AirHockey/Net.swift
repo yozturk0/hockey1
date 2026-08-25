@@ -48,6 +48,14 @@ final class Net: NSObject {
     private var retryCount = 0
     private var closedByUs = false
     private var mySide = "a"
+    /// Bumped every time we throw a socket away. Callbacks from an older
+    /// socket carry the generation they were opened with and are ignored, so a
+    /// dying connection can never knock the fresh one over.
+    private var generation = 0
+    /// When the last byte arrived. The server pongs every ping, so a socket
+    /// that has gone quiet for several seconds is dead even if iOS has not
+    /// noticed - which is exactly the state that used to need an app restart.
+    private var lastRx = Date()
 
     /// Set when we are in a room, so an unexpected drop can re-take our seat.
     var wantRoom: String?
@@ -58,7 +66,7 @@ final class Net: NSObject {
         get { UserDefaults.standard.string(forKey: "ah_server") ?? Net.defaultServer }
         set { UserDefaults.standard.set(newValue, forKey: "ah_server") }
     }
-    static let defaultServer = "https://air-hockey-qa5w.onrender.com"
+    static let defaultServer = "https://airhockey-eu.onrender.com"
 
     override init() {
         super.init()
@@ -83,11 +91,26 @@ final class Net: NSObject {
             return
         }
         closedByUs = false
+        lastRx = Date()
         delegate?.netStatus(.connecting)
         let t = session.webSocketTask(with: url)
         task = t
         t.resume()
-        receive()
+        receive(generation)
+    }
+
+    /// Drop whatever we have and dial again right now. This is what the
+    /// reconnect button does: waiting out a backoff is the one thing a player
+    /// staring at a frozen rink should never have to do.
+    func reconnect() {
+        generation += 1
+        retryCount = 0
+        closedByUs = false
+        pingTimer?.invalidate(); pingTimer = nil
+        let old = task
+        task = nil
+        old?.cancel(with: .goingAway, reason: nil)
+        connect()
     }
 
     func disconnect() {
@@ -102,9 +125,10 @@ final class Net: NSObject {
     private func scheduleRetry() {
         guard !closedByUs else { return }
         retryCount += 1
+        let gen = generation
         let wait = min(8.0, 0.6 * pow(1.7, Double(retryCount)))
         DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
-            guard let self, !self.closedByUs else { return }
+            guard let self, !self.closedByUs, gen == self.generation else { return }
             self.task = nil
             self.connect()
         }
@@ -113,7 +137,15 @@ final class Net: NSObject {
     private func startPings() {
         pingTimer?.invalidate()
         pingTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            self?.send(["t": "p", "c": Int(Date().timeIntervalSince1970 * 1000)])
+            guard let self else { return }
+            // Silence for three pings' worth means the socket is a ghost: it
+            // still says "connected" while nothing is coming through.
+            if Date().timeIntervalSince(self.lastRx) > 6 {
+                self.delegate?.netStatus(.failed("Bağlantı koptu"))
+                self.reconnect()
+                return
+            }
+            self.send(["t": "p", "c": Int(Date().timeIntervalSince1970 * 1000)])
         }
         send(["t": "p", "c": Int(Date().timeIntervalSince1970 * 1000)])
     }
@@ -127,10 +159,10 @@ final class Net: NSObject {
         t.send(.string(s)) { _ in /* the receive loop notices a dead socket */ }
     }
 
-    /// The host's mallet-size preference becomes the room's; the server clamps
-    /// it and tells both clients what it ended up as.
-    func create(target: Int, pad: Double, mode: GameMode, half: Bool) {
-        send(["t": "create", "target": target, "pad": pad,
+    /// Mallet size is not negotiable any more, so the room only carries the
+    /// rules the host actually picks. The server still reports the size back.
+    func create(target: Int, mode: GameMode, half: Bool) {
+        send(["t": "create", "target": target,
               "mode": mode.rawValue, "half": half, "name": myName])
     }
 
@@ -153,9 +185,9 @@ final class Net: NSObject {
 
     // MARK: - receive
 
-    private func receive() {
+    private func receive(_ gen: Int) {
         task?.receive { [weak self] result in
-            guard let self else { return }
+            guard let self, gen == self.generation else { return }
             switch result {
             case .failure:
                 self.pingTimer?.invalidate()
@@ -164,12 +196,13 @@ final class Net: NSObject {
                     self.scheduleRetry()
                 }
             case .success(let msg):
+                self.lastRx = Date()
                 switch msg {
                 case .string(let s): self.handle(s)
                 case .data(let d): self.handle(String(data: d, encoding: .utf8) ?? "")
                 @unknown default: break
                 }
-                self.receive()
+                self.receive(gen)
             }
         }
     }
@@ -264,12 +297,15 @@ final class Net: NSObject {
 extension Net: URLSessionWebSocketDelegate {
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
                     didOpenWithProtocol proto: String?) {
+        guard webSocketTask === task else { return }
         retryCount = 0
+        lastRx = Date()
         delegate?.netStatus(.connected)
     }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
                     didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        guard webSocketTask === task else { return }
         pingTimer?.invalidate()
         if !closedByUs {
             delegate?.netStatus(.failed("Bağlantı kapandı"))

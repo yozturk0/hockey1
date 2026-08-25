@@ -7,7 +7,10 @@ enum Field {
     static let W: Double = 100
     static let H: Double = 200
     static let puckR: Double = 3.4
-    static let padR: Double = 5.6             // default mallet radius; per-game overridable
+    /// Every match is played with the same, biggest mallet: one shared feel,
+    /// and the two sides of an online match are never unequal. Lucky mode still
+    /// grows and shrinks it mid-rally, within the bounds below.
+    static let padR: Double = 6.8
     static let padRMin: Double = 3.4
     static let padRMax: Double = 8.2
     static let goalW: Double = 34
@@ -15,8 +18,10 @@ enum Field {
     static let gx1: Double = (W + goalW) / 2
     static let postR: Double = 1.5
 
-    static let puckMax: Double = 255          // a smash crosses the rink in ~0.8 s
-    static let puckMinAfterHit: Double = 30
+    /// Puck speeds are deliberately calm: the whole scale here was pulled down
+    /// by 30 % so a rally stays readable for a child's eyes and thumbs.
+    static let puckMax: Double = 178          // a smash crosses the rink in ~1.1 s
+    static let puckMinAfterHit: Double = 21
     static let padMaxSpeed: Double = 420
     static let friction: Double = 0.94
     static let wallRest: Double = 0.93
@@ -25,6 +30,11 @@ enum Field {
     static let smashBonus: Double = 0.45      // extra restitution on a full-force strike
     static let padTransfer: Double = 0.22     // mallet speed injected along the normal
     static let padDrag: Double = 0.12         // ...and sideways, so a brush curls the puck
+    /// The one tempo knob. A mallet drives the puck with this fraction of its
+    /// own speed, which - together with the equally scaled face-off and clamp
+    /// speeds above - makes every rally play out 30 % slower without touching
+    /// how quickly a finger can move the mallet itself.
+    static let puckTempo: Double = 0.7
 
     /// One countdown length for every restart - kickoff, goals and half time
     /// all run the same 3 - 2 - 1. 2.5 s is long enough to read all three
@@ -148,8 +158,8 @@ final class Engine {
         puck = Vec(x: Field.W / 2, y: Field.H / 2)
         // A wide face-off angle keeps the puck from flying straight into the
         // defender who just reset to centre.
-        puckV = Vec(x: (Bool.random() ? -1 : 1) * (16 + Double.random(in: 0..<30)),
-                    y: dir * (48 + Double.random(in: 0..<22)))
+        puckV = Vec(x: (Bool.random() ? -1 : 1) * (11 + Double.random(in: 0..<21)),
+                    y: dir * (34 + Double.random(in: 0..<15)))
         stallMs = 0
     }
 
@@ -380,8 +390,8 @@ final class Engine {
             if stallMs > Field.stallLimit {
                 stallMs = 0
                 let dir: Double = puck.y < Field.H / 2 ? 1 : -1
-                puckV.x = Double.random(in: -20...20)
-                puckV.y = dir * 55
+                puckV.x = Double.random(in: -14...14)
+                puckV.y = dir * 38
             }
         } else {
             stallMs = 0
@@ -418,10 +428,13 @@ final class Engine {
         // How hard the mallet is driving *into* the puck along the contact normal.
         // Only a real swing earns the bonus - parking the mallet in front of a
         // fast puck must stay a block, not a free rocket.
-        let swing = max(0, p.vx * nx + p.vy * ny)
+        // The mallet is *felt* by the puck at the game's tempo, not at the raw
+        // speed the finger is moving; that is what keeps the rink calm.
+        let pvx = p.vx * Field.puckTempo, pvy = p.vy * Field.puckTempo
+        let swing = max(0, pvx * nx + pvy * ny)
         let punch = clampd(swing / Field.smashRef, 0, 1)
 
-        let rvx = puckV.x - p.vx, rvy = puckV.y - p.vy
+        let rvx = puckV.x - pvx, rvy = puckV.y - pvy
         let vn = rvx * nx + rvy * ny
         if vn < 0 {
             let rest = Field.padRest + Field.smashBonus * punch
@@ -431,8 +444,8 @@ final class Engine {
 
         // Inject the paddle's own motion - this is what makes a smash feel like a
         // smash. Straight-on drive counts far more than a sideways brush.
-        puckV.x += nx * swing * Field.padTransfer + (p.vx - nx * swing) * Field.padDrag
-        puckV.y += ny * swing * Field.padTransfer + (p.vy - ny * swing) * Field.padDrag
+        puckV.x += nx * swing * Field.padTransfer + (pvx - nx * swing) * Field.padDrag
+        puckV.y += ny * swing * Field.padTransfer + (pvy - ny * swing) * Field.padDrag
 
         var sp = (puckV.x * puckV.x + puckV.y * puckV.y).squareRoot()
         if sp < Field.puckMinAfterHit {

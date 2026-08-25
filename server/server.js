@@ -207,9 +207,9 @@ wss.on('connection', (ws) => {
 
       case 'create': {
         leaveRoom(ws);
-        // The host's mallet-size preference becomes the room's; the engine
-        // clamps it, and both clients are told what it ended up as.
-        const room = createRoom({ ...readOpts(m), padR: parseFloat(m.pad) });
+        // Mallet size is no longer a preference: every room is played with the
+        // engine's one size, whatever an older client may still be asking for.
+        const room = createRoom(readOpts(m));
         if (!room) return send(ws, { t: 'err', m: 'Oda olusturulamadi, tekrar dene.' });
         room.seats.a = ws;
         if (typeof m.name === 'string' && m.name.trim()) {
