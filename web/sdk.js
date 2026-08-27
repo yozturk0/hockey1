@@ -67,9 +67,10 @@ const backends = {
     init() {
       const sdk = root.PokiSDK;
       if (!sdk) return Promise.reject(new Error('no PokiSDK'));
-      // Poki resolves this even when things go wrong; the catch is for the
-      // case where the call itself throws.
-      return guard(() => sdk.init(), Promise.reject(new Error('init threw')));
+      // Poki resolves this even when things go wrong; the try is for the case
+      // where the call itself throws.
+      try { return Promise.resolve(sdk.init()); }
+      catch (e) { return Promise.reject(e); }
     },
     loadingStart() {
       // Older SDK builds do not carry this one; it is optional either way.
@@ -80,15 +81,15 @@ const backends = {
     gameplayStop() { guard(() => root.PokiSDK.gameplayStop()); },
     happyTime() { guard(() => root.PokiSDK.happyTime && root.PokiSDK.happyTime(1)); },
     commercial() {
-      return guard(() => root.PokiSDK.commercialBreak(before).then(after, after),
-                   Promise.resolve());
+      try { return root.PokiSDK.commercialBreak(before).then(after, after); }
+      catch (_) { after(); return Promise.resolve(); }
     },
     rewarded() {
-      return guard(
-        () => root.PokiSDK.rewardedBreak(before).then(
+      try {
+        return root.PokiSDK.rewardedBreak(before).then(
           (ok) => { after(); return !!ok; },
-          () => { after(); return false; }),
-        Promise.resolve(false));
+          () => { after(); return false; });
+      } catch (_) { after(); return Promise.resolve(false); }
     },
   },
 
@@ -96,8 +97,8 @@ const backends = {
     init() {
       const sdk = root.CrazyGames && root.CrazyGames.SDK;
       if (!sdk) return Promise.reject(new Error('no CrazyGames SDK'));
-      return guard(() => Promise.resolve(sdk.init()),
-                   Promise.reject(new Error('init threw')));
+      try { return Promise.resolve(sdk.init()); }
+      catch (e) { return Promise.reject(e); }
     },
     loadingStart() { guard(() => root.CrazyGames.SDK.game.loadingStart()); },
     loadingFinished() { guard(() => root.CrazyGames.SDK.game.loadingStop()); },
