@@ -244,7 +244,7 @@ struct GameView: View {
     private var hud: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Text(m.mode == .local ? "OYUNCU 2" : m.foeName.uppercased())
+                Text(m.mode == .local ? S("game.p2") : m.foeName.uppercased())
                     .font(.system(size: sz(12), weight: .bold)).tracking(1)
                     .foregroundStyle(T.dim)
                 Text("\(m.scoreFoe)")
@@ -262,7 +262,7 @@ struct GameView: View {
                     .font(.system(size: sz(34), weight: .black, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(T.me)
-                Text(m.mode == .local ? "OYUNCU 1" : "SEN")
+                Text(m.mode == .local ? S("game.p1") : S("game.me"))
                     .font(.system(size: sz(12), weight: .bold)).tracking(1)
                     .foregroundStyle(T.dim)
                     .lineLimit(1)
@@ -297,15 +297,15 @@ struct GameView: View {
         HStack(alignment: .lastTextBaseline, spacing: 10) {
             Group {
                 if m.gameMode == .lucky && m.halfAt > 0 {
-                    (Text("ŞANSLI · ") + Text("\(m.halfAt)").foregroundColor(T.gold)
-                     + Text(" DEVRE · \(m.target) GOL"))
+                    (Text(S("hud.lucky")) + Text("\(m.halfAt)").foregroundColor(T.gold)
+                     + Text(S("hud.half") + "\(m.target)" + S("hud.goals")))
                 } else if m.gameMode == .lucky {
-                    Text("ŞANSLI · \(m.target) GOL")
+                    Text(S("hud.lucky") + "\(m.target)" + S("hud.goals"))
                 } else if m.halfAt > 0 {
                     (Text("\(m.halfAt)").foregroundColor(T.gold)
-                     + Text(" DEVRE · \(m.target) GOL"))
+                     + Text(S("hud.half") + "\(m.target)" + S("hud.goals")))
                 } else {
-                    Text("\(m.target) GOL")
+                    Text("\(m.target)" + S("hud.goals"))
                 }
             }
             .font(.system(size: sz(10), weight: .bold)).tracking(1.4)
@@ -358,7 +358,7 @@ struct GameView: View {
                     if turnPhone {
                         TurnPhoneIcon().frame(width: 112, height: 112)
                     } else {
-                        Text("DEVRE")
+                        Text(S("half.word"))
                             .font(.system(size: sz(26), weight: .black, design: .rounded))
                             .tracking(6)
                             .foregroundStyle(T.gold)
@@ -367,19 +367,17 @@ struct GameView: View {
                         .font(.system(size: sz(42), weight: .black, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(T.txt)
-                    Text(turnPhone
-                         ? "Alt taraf yukarı, üst taraf aşağı.\nBöylece herkes ekranın iki yanını da kullanır."
-                         : "İkiniz de hazır deyince ikinci yarı başlar.")
+                    Text(S(turnPhone ? "half.noteTurn" : "half.noteWait"))
                         .font(.system(size: sz(13)))
                         .foregroundStyle(T.dim)
                         .multilineTextAlignment(.center)
-                    Button(turnPhone ? "Çevirdik, Devam" : "Hazırım") { m.continueHalftime() }
+                    Button(S(turnPhone ? "half.btnTurn" : "half.btnReady")) { m.continueHalftime() }
                         .buttonStyle(PrimaryButton())
                         .disabled(!turnPhone && m.halfReady)
                         .opacity(!turnPhone && m.halfReady ? 0.5 : 1)
                         .padding(.top, 4)
                     if !turnPhone && m.halfReady && !m.foeReady {
-                        Text("Rakip bekleniyor…")
+                        Text(S("half.waitFoe"))
                             .font(.system(size: sz(13))).foregroundStyle(T.dim)
                     }
                 }
@@ -397,10 +395,10 @@ struct GameView: View {
 
     private var halfNotice: some View {
         VStack(spacing: 4) {
-            Text("DEVRE")
+            Text(S("half.word"))
                 .font(.system(size: sz(26), weight: .black, design: .rounded)).tracking(6)
                 .foregroundStyle(T.gold)
-            Text("\(Device.itAccCap) 180° çevirin")
+            Text(S("half.turn"))
                 .font(.system(size: sz(15), weight: .bold))
                 .foregroundStyle(T.txt)
         }
@@ -419,8 +417,8 @@ struct GameView: View {
                     .font(.system(size: sz(52), weight: .black, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(T.txt)
-                Button("Tekrar Oyna") { m.playAgain() }.buttonStyle(PrimaryButton())
-                Button("Ana Menü") { m.exitGame() }.buttonStyle(GhostButton())
+                Button(S("over.again")) { m.playAgain() }.buttonStyle(PrimaryButton())
+                Button(S("over.menu")) { m.exitGame() }.buttonStyle(GhostButton())
             }
             .padding(28)
             .frame(maxWidth: Device.isPad ? 430 : 360)

@@ -210,7 +210,7 @@ wss.on('connection', (ws) => {
         // Mallet size is no longer a preference: every room is played with the
         // engine's one size, whatever an older client may still be asking for.
         const room = createRoom(readOpts(m));
-        if (!room) return send(ws, { t: 'err', m: 'Oda olusturulamadi, tekrar dene.' });
+        if (!room) return send(ws, { t: 'err', k: 'create', m: 'Oda olusturulamadi, tekrar dene.' });
         room.seats.a = ws;
         if (typeof m.name === 'string' && m.name.trim()) {
           room.names.a = m.name.trim().slice(0, 14);
@@ -226,12 +226,12 @@ wss.on('connection', (ws) => {
       case 'join': {
         const code = String(m.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
         const room = rooms.get(code);
-        if (!room) return send(ws, { t: 'err', m: 'Bu kodla bir oda bulunamadi.' });
+        if (!room) return send(ws, { t: 'err', k: 'notFound', m: 'Bu kodla bir oda bulunamadi.' });
 
         let side = null;
         if (!room.seats.b) side = 'b';
         else if (!room.seats.a) side = 'a';
-        if (!side) return send(ws, { t: 'err', m: 'Bu oda dolu.' });
+        if (!side) return send(ws, { t: 'err', k: 'full', m: 'Bu oda dolu.' });
 
         leaveRoom(ws);
         room.seats[side] = ws;
@@ -383,7 +383,7 @@ setInterval(() => {
     if (occupancy(room) === 0 && now - room.emptySince > ROOM_TTL_MS) {
       rooms.delete(code);
     } else if (room.game.state === ST.LOBBY && now - room.createdAt > LOBBY_TTL_MS) {
-      broadcast(room, { t: 'err', m: 'Oda zaman asimina ugradi.' });
+      broadcast(room, { t: 'err', k: 'timeout', m: 'Oda zaman asimina ugradi.' });
       rooms.delete(code);
     }
   }

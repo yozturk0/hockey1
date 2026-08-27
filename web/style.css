@@ -280,6 +280,9 @@ input::placeholder{color:var(--dim);opacity:.7}
   border:1px solid rgba(0,0,0,.22);
 }
 
+/* language rows: one wide chip per language, same shape as the theme rows */
+.chip-lang{font-size:15px;flex:1 1 40%;height:52px}
+
 /* the "4 golde devre -> 7 golde biter" plan strip */
 .plan{
   display:flex;align-items:center;justify-content:center;gap:10px;
@@ -423,6 +426,13 @@ body[data-theme="gece"] .center-msg{color:#fff;text-shadow:0 0 44px rgba(34,211,
   transition:opacity .2s ease;
 }
 .overlay.hidden{opacity:0;pointer-events:none;visibility:hidden}
+
+/* First launch only: the language question sits above everything, including
+   the menu it is covering. */
+.langgate{position:fixed;z-index:60;background:var(--bg)}
+.langgate .ovl-card{gap:16px}
+.langgate-chips{margin-top:2px}
+.lang-flag{font-size:46px;line-height:1}
 .ovl-card{width:100%;max-width:360px;display:flex;flex-direction:column;gap:13px;text-align:center}
 .ovl-title{font-size:31px;font-weight:900;letter-spacing:-.01em}
 .ovl-title.win{color:var(--me)}

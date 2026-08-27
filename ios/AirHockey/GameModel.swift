@@ -53,8 +53,8 @@ final class GameModel: ObservableObject, NetDelegate {
     /// Rules of the match in progress, or of the room we are sitting in.
     @Published var gameMode: GameMode = .classic
     @Published var mySide = "a"
-    @Published var myName = UserDefaults.standard.string(forKey: "ah_name") ?? "Oyuncu"
-    @Published var foeName = "Rakip"
+    @Published var myName = UserDefaults.standard.string(forKey: "ah_name") ?? S("menu.namePh")
+    @Published var foeName = S("game.foe")
     @Published var foePresent = false
 
     // Live match
@@ -114,9 +114,21 @@ final class GameModel: ObservableObject, NetDelegate {
 
     func saveName(_ n: String) {
         let clean = String(n.prefix(14)).trimmingCharacters(in: .whitespaces)
-        myName = clean.isEmpty ? "Oyuncu" : clean
+        myName = clean.isEmpty ? S("menu.namePh") : clean
         net.myName = myName
         UserDefaults.standard.set(myName, forKey: "ah_name")
+    }
+
+    /// A name the player typed is theirs and stays put; the untouched default
+    /// follows the language, as does the stand-in for an empty opponent slot.
+    func retranslateDefaults() {
+        let defaults = ["Oyuncu", "Player"]
+        if defaults.contains(myName) {
+            myName = S("menu.namePh")
+            net.myName = myName
+            UserDefaults.standard.set(myName, forKey: "ah_name")
+        }
+        if !foePresent { foeName = S("game.foe") }
     }
 
     func saveServer() {
@@ -135,7 +147,7 @@ final class GameModel: ObservableObject, NetDelegate {
         Sound.shared.ui()
         canReconnect = false
         net.reconnect()
-        flash("Sunucuya yeniden bağlanılıyor…")
+        flash(S("net.again"))
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             self?.canReconnect = true
@@ -151,7 +163,7 @@ final class GameModel: ObservableObject, NetDelegate {
     func createRoom() {
         Sound.shared.ui()
         guard status == .connected else {
-            flash("Sunucuya bağlanılıyor…")
+            flash(S("net.wait"))
             net.connect()
             return
         }
@@ -164,7 +176,7 @@ final class GameModel: ObservableObject, NetDelegate {
         let c = joinCode.uppercased().filter { $0.isLetter || $0.isNumber }
         guard c.count == 4 else { return flash("4 haneli oda kodunu gir.") }
         guard status == .connected else {
-            flash("Sunucuya bağlanılıyor…")
+            flash(S("net.wait"))
             net.connect()
             return
         }
@@ -307,17 +319,14 @@ final class GameModel: ObservableObject, NetDelegate {
     }
 
     /// What a lucky-mode twist should say. `mine` is true when the affected
-    /// mallet is the bottom one; on one shared phone that is Oyuncu 1, not you.
+    /// mallet is the bottom one; on one shared phone that is Player 1, not you.
     private func luckyText(_ code: Int, mine: Bool, local: Bool) -> String {
+        let who = local ? S(mine ? "fx.p1" : "fx.p2") : S(mine ? "fx.mine" : "fx.theirs")
         switch code {
-        case FX.grow:
-            return local ? (mine ? "OYUNCU 1 BÜYÜDÜ" : "OYUNCU 2 BÜYÜDÜ")
-                         : (mine ? "SOPAN BÜYÜDÜ" : "RAKİP BÜYÜDÜ")
-        case FX.shrink:
-            return local ? (mine ? "OYUNCU 1 KÜÇÜLDÜ" : "OYUNCU 2 KÜÇÜLDÜ")
-                         : (mine ? "SOPAN KÜÇÜLDÜ" : "RAKİP KÜÇÜLDÜ")
-        case FX.fast: return "BUZ KAYGAN"
-        default:      return "BUZ AĞIR"
+        case FX.grow:   return who + S("fx.grow")
+        case FX.shrink: return who + S("fx.shrink")
+        case FX.fast:   return S("fx.fast")
+        default:        return S("fx.slow")
         }
     }
 
@@ -473,12 +482,12 @@ final class GameModel: ObservableObject, NetDelegate {
             paintCountdown(g.countdown)
         } else if prev == .countdown && g.state == .playing {
             lastCountdown = -1
-            setCenter("BAŞLA!", goal: false, seconds: 0.55)
+            setCenter(S("game.go"), goal: false, seconds: 0.55)
         }
 
         if g.state == .over && prev != .over {
             overlayWin = g.winner == "a"
-            overlayTitle = overlayWin ? "Oyuncu 1 Kazandı!" : "Oyuncu 2 Kazandı!"
+            overlayTitle = S(overlayWin ? "over.p1Win" : "over.p2Win")
             showOverlay = true
             Sound.shared.over(win: true)
         }
@@ -569,8 +578,8 @@ final class GameModel: ObservableObject, NetDelegate {
 
     nonisolated func netPeer(online: Bool) {
         Task { @MainActor in
-            if online { Sound.shared.join(); self.flash("Rakip bağlandı!") }
-            else { self.flash("Rakip ayrıldı — bekleniyor…") }
+            if online { Sound.shared.join(); self.flash(S("net.peerIn")) }
+            else { self.flash(S("net.peerOut")) }
         }
     }
 
@@ -611,7 +620,7 @@ final class GameModel: ObservableObject, NetDelegate {
                 let mine = e.y < Field.H / 2     // the puck went into THEIR net
                 Sound.shared.goal(mine: mine)
                 world.shake = 1
-                setCenter(mine ? "GOL!" : "Rakip Attı", goal: true, seconds: 1.2)
+                setCenter(S(mine ? "game.goal" : "game.foeGoal"), goal: true, seconds: 1.2)
             default:
                 Sound.shared.ui()
                 setCenter(luckyText(Int(e.intensity), mine: e.y >= Field.H / 2, local: false),
@@ -623,9 +632,9 @@ final class GameModel: ObservableObject, NetDelegate {
             paintCountdown(s.countdown)
         } else if lastState == .countdown && s.state == .playing {
             lastCountdown = -1
-            setCenter("BAŞLA!", goal: false, seconds: 0.55)
+            setCenter(S("game.go"), goal: false, seconds: 0.55)
         } else if s.state == .paused {
-            setCenter("Rakip bekleniyor…", goal: true, seconds: 0)
+            setCenter(S("game.waitFoe"), goal: true, seconds: 0)
         }
 
         // Online there is no phone to turn — the break is just a breather.
@@ -640,7 +649,7 @@ final class GameModel: ObservableObject, NetDelegate {
 
         if s.state == .over && lastState != .over {
             overlayWin = s.iWon ?? false
-            overlayTitle = overlayWin ? "Kazandın!" : "Kaybettin"
+            overlayTitle = S(overlayWin ? "over.win" : "over.lose")
             showOverlay = true
             Sound.shared.over(win: overlayWin)
         }

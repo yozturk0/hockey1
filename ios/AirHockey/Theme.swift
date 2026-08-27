@@ -17,10 +17,11 @@ enum Device {
     /// unaffected.
     static var typeScale: CGFloat { isPad ? 1.16 : 1 }
 
-    static var sameDevice: String { isPad ? "Aynı iPad'de 2 Kişi" : "Aynı Telefonda 2 Kişi" }
-    /// accusative — "…yu aranıza koyun", "…yu 180° çevirin"
-    static var itAcc: String { isPad ? "iPad'i" : "telefonu" }
-    static var itAccCap: String { isPad ? "iPad'i" : "Telefonu" }
+    /// What to call the thing in the middle. The wording lives in
+    /// `Strings.swift` under the "dev." keys, one set per language.
+    static var sameDevice: String { S("dev.same") }
+    static var itAcc: String { S("dev.it") }
+    static var itAccCap: String { S("dev.itCap") }
 }
 
 /// Menu font size, nudged up on a tablet. Never used for rink geometry.
@@ -32,8 +33,9 @@ enum Device {
 /// and the rink; this is the Swift twin of `PALETTES` in `web/app.js` and the
 /// CSS custom properties in `web/style.css` — keep the three in step.
 struct Palette {
+    /// Also the lookup key for this rink's name — see "theme.<key>" in
+    /// `Strings.swift`.
     let key: String
-    let name: String
 
     // page chrome
     let bg: Color
@@ -67,7 +69,7 @@ private func rgb(_ r: Double, _ g: Double, _ b: Double) -> Color {
 
 enum Palettes {
     static let krem = Palette(
-        key: "krem", name: "Krem",
+        key: "krem",
         bg: rgb(239, 225, 194), bg2: rgb(229, 212, 172),
         txt: rgb(59, 45, 28), dim: rgb(125, 103, 70),
         me: rgb(23, 114, 107), me2: rgb(42, 157, 143),
@@ -85,7 +87,7 @@ enum Palettes {
         glow: false)
 
     static let buz = Palette(
-        key: "buz", name: "Buz",
+        key: "buz",
         bg: rgb(233, 241, 250), bg2: rgb(217, 231, 246),
         txt: rgb(22, 40, 63), dim: rgb(92, 116, 143),
         me: rgb(14, 116, 144), me2: rgb(14, 165, 183),
@@ -103,7 +105,7 @@ enum Palettes {
         glow: false)
 
     static let cim = Palette(
-        key: "cim", name: "Çim",
+        key: "cim",
         bg: rgb(232, 240, 217), bg2: rgb(217, 230, 196),
         txt: rgb(37, 51, 26), dim: rgb(95, 122, 75),
         me: rgb(28, 107, 74), me2: rgb(47, 158, 106),
@@ -121,7 +123,7 @@ enum Palettes {
         glow: false)
 
     static let gece = Palette(
-        key: "gece", name: "Gece",
+        key: "gece",
         bg: rgb(7, 11, 20), bg2: rgb(13, 20, 36),
         txt: rgb(232, 238, 252), dim: rgb(142, 160, 196),
         me: rgb(34, 211, 238), me2: rgb(59, 130, 246),
@@ -149,29 +151,30 @@ enum Palettes {
 /// `stops` is the highlight -> body -> rim gradient. A nil `stops` means
 /// "whatever the rink was designed around".
 struct PuckSkin {
+    /// Also the lookup key for this colour's name — see "puck.<key>" in
+    /// `Strings.swift`.
     let key: String
-    let name: String
     let stops: [Color]?
 }
 
 enum PuckSkins {
     static let all: [PuckSkin] = [
-        PuckSkin(key: "tema", name: "Tema", stops: nil),
-        PuckSkin(key: "siyah", name: "Siyah",
+        PuckSkin(key: "tema", stops: nil),
+        PuckSkin(key: "siyah",
                  stops: [rgb(110, 110, 110), rgb(35, 35, 35), rgb(8, 8, 8)]),
-        PuckSkin(key: "kirmizi", name: "Kırmızı",
+        PuckSkin(key: "kirmizi",
                  stops: [rgb(255, 168, 152), rgb(226, 59, 38), rgb(127, 26, 14)]),
-        PuckSkin(key: "turuncu", name: "Turuncu",
+        PuckSkin(key: "turuncu",
                  stops: [rgb(255, 211, 154), rgb(240, 135, 30), rgb(143, 76, 8)]),
-        PuckSkin(key: "sari", name: "Sarı",
+        PuckSkin(key: "sari",
                  stops: [rgb(255, 246, 216), rgb(255, 209, 102), rgb(184, 128, 26)]),
-        PuckSkin(key: "yesil", name: "Yeşil",
+        PuckSkin(key: "yesil",
                  stops: [rgb(168, 240, 200), rgb(32, 160, 94), rgb(12, 77, 44)]),
-        PuckSkin(key: "mavi", name: "Mavi",
+        PuckSkin(key: "mavi",
                  stops: [rgb(182, 220, 255), rgb(31, 122, 224), rgb(11, 60, 120)]),
-        PuckSkin(key: "mor", name: "Mor",
+        PuckSkin(key: "mor",
                  stops: [rgb(220, 188, 255), rgb(139, 62, 224), rgb(67, 23, 117)]),
-        PuckSkin(key: "beyaz", name: "Beyaz",
+        PuckSkin(key: "beyaz",
                  stops: [.white, rgb(238, 241, 246), rgb(154, 164, 178)]),
     ]
     static func named(_ key: String) -> PuckSkin {
@@ -319,7 +322,7 @@ struct ChipStyle: ButtonStyle {
     }
 }
 
-/// "Kaç golde biter?" — presets plus a free-form field.
+/// "How many goals to win?" — presets plus a free-form field.
 struct ScorePicker: View {
     @Binding var value: Int
     var editable: Bool = true
@@ -327,7 +330,7 @@ struct ScorePicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Kaç golde biter?")
+            Text(S("com.target"))
                 .font(.system(size: sz(13), weight: .semibold))
                 .foregroundStyle(T.dim)
             HStack(spacing: 8) {
@@ -351,19 +354,19 @@ struct ScorePicker: View {
     }
 }
 
-/// "Klasik" / "Şanslı" — the two ways a match can be played.
+/// Classic / Lucky — the two ways a match can be played.
 struct ModePicker: View {
     @Binding var value: GameMode
     var editable: Bool = true
 
-    private let items: [(GameMode, String, String)] = [
-        (.classic, "Klasik", "Kurallar sabit"),
-        (.lucky, "Şanslı", "Sopalar büyür, buz değişir"),
-    ]
+    private var items: [(GameMode, String, String)] {
+        [(.classic, S("com.classic"), S("com.classicSub")),
+         (.lucky, S("com.lucky"), S("com.luckySub"))]
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Oyun modu")
+            Text(S("com.mode"))
                 .font(.system(size: sz(13), weight: .semibold))
                 .foregroundStyle(T.dim)
             HStack(spacing: 8) {
@@ -434,7 +437,7 @@ struct OptionToggle: View {
     }
 }
 
-/// "4 golde devre → 7 golde biter" — what the match will actually look like.
+/// "4 goals half time → 7 goals game ends" — what the match will look like.
 struct MatchPlan: View {
     let target: Int
     var enabled: Bool = true
@@ -444,9 +447,9 @@ struct MatchPlan: View {
         Group {
             if half > 0 {
                 HStack(spacing: 10) {
-                    part(half, "golde", "devre", T.gold)
+                    part(half, S("plan.goals"), S("plan.half"), T.gold)
                     Text("→").font(.system(size: sz(15), weight: .heavy)).foregroundStyle(T.dim.opacity(0.6))
-                    part(target, "golde", "biter", T.me)
+                    part(target, S("plan.goals"), S("plan.end"), T.me)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
@@ -498,7 +501,7 @@ private struct CustomScoreField: View {
                 if focused {
                     ToolbarItemGroup(placement: .keyboard) {
                         Spacer()
-                        Button("Tamam") { focused = false }
+                        Button(S("com.ok")) { focused = false }
                     }
                 }
             }
