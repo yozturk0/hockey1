@@ -11,7 +11,7 @@ const STR = {
   tr: {
     /* ---- app chrome ---- */
     'doc.title':        'Air Hockey — Online',
-    'doc.desc':         'Arkadaşınla oda kodu paylaş, anında online hava hokeyi oyna. Kayıt yok, kurulum yok.',
+    'doc.desc':         'Hızlı hava hokeyi. Bilgisayara karşı, aynı telefonda iki kişi ya da arkadaşınla online oyna. Kayıt yok, kurulum yok.',
 
     /* ---- first-run language picker ---- */
     'lang.pick':        'Dil / Language',
@@ -21,9 +21,11 @@ const STR = {
     'lang.hint':        'Dili istediğin zaman buradan değiştirebilirsin.',
 
     /* ---- menu ---- */
-    'menu.tagline':     'Oda kodunu paylaş, anında oyna.<br>Kayıt yok, indirme yok.',
+    'menu.tagline':     'Dokun ve oyna.<br>Kayıt yok, indirme yok, kurulum yok.',
     'menu.online':      'Online Oyna',
     'menu.onlineSub':   'Arkadaşınla, uzaktan',
+    'menu.play':        'Oyna',
+    'menu.playSub':     'Bilgisayara karşı, hemen',
     'menu.local':       'Aynı Telefonda 2 Kişi',
     'menu.localSub':    'Tek ekran, çift dokunuş',
     'menu.name':        'Adın',
@@ -154,6 +156,17 @@ const STR = {
     'net.invite':       'Air Hockey oynayalım! Oda kodum: {code}\nLinke dokun, direkt odaya gir:\n{url}',
 
     /* ---- server-sent errors ---- */
+    'game.bot':         'Bilgisayar',
+    'skin.locked':      'Kilitli renk',
+    'skin.offer':       'Kısa bir video izle, bütün top renkleri açılsın.',
+    'skin.watch':       'Videoyu İzle',
+    'skin.no':          'Şimdi Değil',
+    'skin.done':        'Bütün renkler açıldı!',
+    'skin.fail':        'Video yüklenemedi, sonra tekrar dene.',
+    'over.soloWin':     'Kazandın!',
+    'over.soloLose':    'Bilgisayar kazandı',
+    'over.soloAgain':   'Bir Daha',
+
     'err.create':       'Oda oluşturulamadı, tekrar dene.',
     'err.notFound':     'Bu kodla bir oda bulunamadı.',
     'err.full':         'Bu oda dolu.',
@@ -162,7 +175,7 @@ const STR = {
 
   en: {
     'doc.title':        'Air Hockey — Online',
-    'doc.desc':         'Share a room code with a friend and play air hockey online right away. No sign up, no setup.',
+    'doc.desc':         'Fast air hockey. Play the computer, share one phone with a friend, or play online. No sign up, no setup.',
 
     'lang.pick':        'Language / Dil',
     'lang.sub':         'Which language do you want to play in?',
@@ -170,9 +183,11 @@ const STR = {
     'lang.title':       'Language',
     'lang.hint':        'You can change the language here any time.',
 
-    'menu.tagline':     'Share the room code and play right away.<br>No sign up, no download.',
+    'menu.tagline':     'Tap and play.<br>No sign up, no download, no setup.',
     'menu.online':      'Play Online',
     'menu.onlineSub':   'With a friend, far away',
+    'menu.play':        'Play',
+    'menu.playSub':     'Against the computer, right now',
     'menu.local':       '2 Players on One Phone',
     'menu.localSub':    'One screen, two fingers',
     'menu.name':        'Your name',
@@ -292,6 +307,17 @@ const STR = {
     'net.inviteCopied': 'Invite copied',
     'net.invite':       "Let's play Air Hockey! My room code is: {code}\nTap the link to jump right in:\n{url}",
 
+    'game.bot':         'Computer',
+    'skin.locked':      'Locked colour',
+    'skin.offer':       'Watch a short video to unlock every puck colour.',
+    'skin.watch':       'Watch Video',
+    'skin.no':          'Not Now',
+    'skin.done':        'All colours unlocked!',
+    'skin.fail':        'The video could not load. Try again later.',
+    'over.soloWin':     'You Won!',
+    'over.soloLose':    'The computer won',
+    'over.soloAgain':   'Again',
+
     'err.create':       'The room could not be made. Please try again.',
     'err.notFound':     'No room was found with that code.',
     'err.full':         'This room is full.',
@@ -308,10 +334,25 @@ function chosen() {
   catch (_) { return false; }
 }
 
+/* What the browser says the player reads, if we speak it. This is what the
+   first-run pop-up used to ask for — asking was a screen between the player
+   and the game, and the answer was already sitting in navigator.language. */
+function detect() {
+  try {
+    const tags = navigator.languages || [navigator.language || ''];
+    for (const tag of tags) {
+      const base = String(tag).toLowerCase().split('-')[0];
+      if (LANGS.indexOf(base) >= 0) return base;
+    }
+  } catch (_) {}
+  return 'en';
+}
+
 function load() {
+  lang = detect();
   try {
     const v = localStorage.getItem('ah_lang');
-    if (LANGS.indexOf(v) >= 0) lang = v;
+    if (LANGS.indexOf(v) >= 0) lang = v;   // an explicit choice always wins
   } catch (_) { /* first run, or storage blocked */ }
 }
 

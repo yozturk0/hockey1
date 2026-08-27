@@ -5,7 +5,7 @@
 <title>Air Hockey — Online</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#070b14">
-<meta name="description" content="Share a room code with a friend and play air hockey online right away. No sign up, no setup.">
+<meta name="description" content="Fast air hockey. Play the computer, share one phone with a friend, or play online. No sign up, no setup.">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -25,23 +25,22 @@
       <span class="logo-b">HOCKEY</span>
       <i class="logo-puck"></i>
     </div>
-    <p class="tagline" data-i18n-html="menu.tagline">Share the room code and play right away.<br>No sign up, no download.</p>
+    <p class="tagline" data-i18n-html="menu.tagline">Tap and play.<br>No sign up, no download, no setup.</p>
 
     <div class="btns">
-      <button class="btn btn-primary" id="b-online">
-        <span class="btn-ico">🌐</span>
-        <span class="btn-txt"><b data-i18n="menu.online">Play Online</b><small data-i18n="menu.onlineSub">With a friend, far away</small></span>
+      <button class="btn btn-primary btn-play" id="b-play">
+        <span class="btn-ico">🏒</span>
+        <span class="btn-txt"><b data-i18n="menu.play">Play</b><small data-i18n="menu.playSub">Against the computer, right now</small></span>
       </button>
       <button class="btn" id="b-local">
         <span class="btn-ico">📱</span>
         <span class="btn-txt"><b data-i18n="menu.local">2 Players on One Phone</b><small data-i18n="menu.localSub">One screen, two fingers</small></span>
       </button>
+      <button class="btn" id="b-online">
+        <span class="btn-ico">🌐</span>
+        <span class="btn-txt"><b data-i18n="menu.online">Play Online</b><small data-i18n="menu.onlineSub">With a friend, far away</small></span>
+      </button>
     </div>
-
-    <label class="namefield">
-      <span data-i18n="menu.name">Your name</span>
-      <input id="i-name" type="text" maxlength="14" data-i18n-ph="menu.namePh" placeholder="Player" autocomplete="off" autocapitalize="words" spellcheck="false">
-    </label>
 
     <button class="btn btn-ghost btn-gear" id="b-settings"><span class="gear-ico">⚙️</span><span data-i18n="menu.settings">Settings</span></button>
   </div>
@@ -52,6 +51,11 @@
 <section class="screen hidden" id="s-online">
   <div class="stack">
     <h2 class="title" data-i18n="on.title">Play Online</h2>
+
+    <label class="namefield">
+      <span data-i18n="menu.name">Your name</span>
+      <input id="i-name" type="text" maxlength="14" data-i18n-ph="menu.namePh" placeholder="Player" autocomplete="off" autocapitalize="words" spellcheck="false">
+    </label>
 
     <div class="card">
       <h3 data-i18n="on.create">Make a Room</h3>
@@ -286,30 +290,31 @@
   </div>
 </section>
 
-<!-- ============ İLK AÇILIŞ: DİL / FIRST LAUNCH: LANGUAGE ============ -->
-<!-- Shown once, on the very first launch. The answer is remembered, and the
-     language stays changeable in Settings from then on. -->
-<div class="overlay langgate hidden" id="langgate">
-  <div class="ovl-card">
-    <div class="lang-flag" aria-hidden="true">🏒</div>
-    <div class="ovl-title" data-i18n="lang.pick">Language / Dil</div>
-    <p class="ovl-sub" data-i18n="lang.sub">Which language do you want to play in?</p>
-    <div class="chips chips-wrap langgate-chips" id="pick-lang-first">
-      <button class="chip chip-lang is-on" data-v="en">English</button>
-      <button class="chip chip-lang" data-v="tr">Türkçe</button>
-    </div>
-    <button class="btn btn-primary" id="b-lang-go" data-i18n="lang.go">Go</button>
-  </div>
-</div>
-
 <!-- Always in the same top-right spot: a frozen match is one tap from live
      again instead of a wait. The rink has its own copy inside the HUD. -->
 <button class="reconnect" id="b-reconnect" data-i18n-title="game.reconnect" data-i18n-aria="game.reconnect"
         title="Connect to the server again" aria-label="Connect to the server again">⟳</button>
 
+<!-- Rewarded video, the only ad the player ever asks for by name. The label
+     says plainly what is about to happen, and the icon marks it as a video. -->
+<div class="overlay hidden" id="skingate">
+  <div class="ovl-card">
+    <div class="ovl-title" data-i18n="skin.locked">Locked colour</div>
+    <p class="ovl-sub" data-i18n="skin.offer">Watch a short video to unlock every puck colour.</p>
+    <button class="btn btn-primary btn-rewarded" id="b-skin-watch">
+      <span class="btn-ico" aria-hidden="true">▶</span>
+      <span data-i18n="skin.watch">Watch Video</span>
+    </button>
+    <button class="btn btn-ghost" id="b-skin-no" data-i18n="skin.no">Not Now</button>
+  </div>
+</div>
+
 <div class="toast hidden" id="toast"></div>
 
+<script src="sdk.js"></script>
 <script src="engine.js"></script>
+<script src="view.js"></script>
+<script src="bot.js"></script>
 <script src="sound.js"></script>
 <script src="i18n.js"></script>
 <script src="app.js"></script>

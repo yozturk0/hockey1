@@ -502,3 +502,59 @@ body[data-theme="gece"] .center-msg{color:#fff;text-shadow:0 0 44px rgba(34,211,
 .toast.hidden{opacity:0;transform:translate(-50%,12px);pointer-events:none}
 
 @media (min-height:760px){ .stack{gap:20px} }
+
+/* ===================== portal build additions ===================== */
+
+/* The front door. It is bigger than the rest because it is the only thing a
+   first-time player needs to find. */
+.btn-play{min-height:74px}
+.btn-play .btn-ico{font-size:28px}
+.btn-play .btn-txt b{font-size:19px}
+
+/* The connection lamp only means something once somebody has asked to play
+   online. Before that it is a spinner in front of a game that needs no server. */
+.foot{transition:opacity .2s}
+body:not(.net-used) .foot{opacity:0;pointer-events:none}
+
+/* A puck colour that has not been unlocked yet. The play icon marks it as a
+   video, and it is deliberately not green: a reward button that looks like a
+   "free" button is a dark pattern, and both portals call it out. */
+.chip.is-locked{opacity:.55}
+.chip.is-locked::after{
+  content:"▶";position:absolute;top:3px;right:5px;
+  font-size:9px;line-height:1;opacity:.85
+}
+.chip-puck{position:relative}
+.btn-rewarded{gap:10px}
+.btn-rewarded .btn-ico{font-size:15px}
+
+/* ---- Landscape rink ----
+   Poki requires 16:9 support, and a desktop portal frame is always wide. A
+   200-tall rink squeezed into a 360-tall window wastes most of the screen, so
+   on a wide, short viewport the whole rink is turned on its side: the canvas is
+   rotated a quarter turn and the two goals move to the left and right walls.
+   The physics never learns about this — only the drawing and the touch mapping
+   do — so a landscape match and a portrait match are the same match. */
+.screen-game{--rink-turn:0}
+@media (min-aspect-ratio:1/1){
+  .screen-game{--rink-turn:1}
+}
+
+/* Safe areas: a notch or a home bar must never sit on top of the score, and on
+   a portal page the frame edge counts too. */
+.hud-top{padding-top:max(var(--safe-t),8px)}
+.hud-bot{padding-bottom:max(var(--safe-b),8px)}
+.hud-exit,.hud-reconnect{top:max(var(--safe-t),8px)}
+
+/* In landscape the goals are on the left and right walls, so the scores follow
+   them: mine by my goal, theirs by theirs. The half-turn on the opponent's
+   block is dropped — it exists so the far player can read their score across a
+   flat phone, and side by side there is no far player. */
+body.landscape .hud{flex-direction:row;align-items:flex-start;justify-content:space-between}
+body.landscape .hud-top{transform:none;align-self:flex-start;order:2;flex-direction:row-reverse}
+body.landscape .hud-bot{align-self:flex-end;order:1;flex:0 1 auto}
+body.landscape .hud-meta{margin-left:0}
+
+/* The floating reconnect button is a fix for a problem only an online match
+   can have, so it stays out of the way until there is a socket to mend. */
+body:not(.net-used) .reconnect{display:none}

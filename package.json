@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node server/server.js",
     "dev": "node server/server.js",
-    "test": "node test/engine.test.js",
+    "test": "node test/engine.test.js && node test/view.test.js",
     "test:server": "node test/server.test.js"
   },
   "dependencies": {

@@ -5,6 +5,9 @@
 
 const { Game, ST, CONST, halftimeFor, countdownDigit, MODES, FX } = window.AHEngine;
 const { W, H, PUCK_R, PAD_R, GX0, GX1, PUCK_MAX, PAD_MAX_SPEED } = CONST;
+const { Bot } = window.AHBot;
+const View = window.AHView;
+const Portal = window.AHPortal;
 
 const I18n = window.AHI18n;
 const t = (k, v) => I18n.t(k, v);
@@ -37,10 +40,16 @@ const PUCK_COLORS = {
   beyaz:   { g: ['#ffffff', '#eef1f6', '#9aa4b2'], rgb: '238,241,246' },
 };
 const PUCK_KEYS = Object.keys(PUCK_COLORS);
+/* Four colours are simply there; the rest are the reward for choosing to watch
+   one video. Nothing here touches how the game plays — a locked colour is a
+   locked colour, never a locked mallet or a locked mode. Off-portal there is no
+   video to watch, so there is nothing to lock either. */
+const FREE_PUCKS = ['tema', 'siyah', 'kirmizi', 'mavi'];
 
 const Cfg = {
   theme: 'krem',
   puck: 'tema',
+  skins: false,       // every puck colour unlocked
   /* Last match rules, so the same two people do not re-pick them every time. */
   mode: MODES.CLASSIC,
   half: true,
@@ -52,18 +61,25 @@ const Cfg = {
       if (PUCK_KEYS.indexOf(j.puck) >= 0) this.puck = j.puck;
       if (MODE_KEYS.indexOf(j.mode) >= 0) this.mode = j.mode;
       if (typeof j.half === 'boolean') this.half = j.half;
+      if (j.skins === true) this.skins = true;
     } catch (_) { /* first run, or storage blocked */ }
+    if (Portal.target === 'none') this.skins = true;
   },
+  locked(key) { return !this.skins && FREE_PUCKS.indexOf(key) < 0; },
   save() {
     try {
       localStorage.setItem('ah_cfg', JSON.stringify(
-        { theme: this.theme, puck: this.puck, mode: this.mode, half: this.half }));
+        { theme: this.theme, puck: this.puck, mode: this.mode, half: this.half,
+          skins: this.skins }));
     } catch (_) {}
   },
   padR() { return PAD_R; },
   lead() { return GRIP_LEAD; },
   /* Falls back to the rink's own puck when the player has not picked one. */
-  puckG() { return PUCK_COLORS[this.puck].g || PAL.puck; },
+  puckG() {
+    if (this.locked(this.puck)) return PAL.puck;
+    return PUCK_COLORS[this.puck].g || PAL.puck;
+  },
   puckRGB() { return PUCK_COLORS[this.puck].rgb || PAL.trail; },
 };
 Cfg.load();
@@ -164,7 +180,9 @@ const App = {
   lastCd: -1,
   lastState: -1,
   game: null,          // local engine
+  bot: null,           // solo mode: the thing driving the top mallet
   flip: false,         // second half — the phone has been turned around
+  paused: false,       // an ad is up, or the tab went away
 };
 
 /* Smoothed render positions (my paddle is ALWAYS the bottom one). */
@@ -606,6 +624,8 @@ function updatePlan(id, target, halfOn) {
 /* ============================ game over ============================ */
 
 function showOver(win, me, foe) {
+  Portal.gameplayStop();
+  if (win) Portal.happyTime();
   Snd.over(win);
   const el = $('ovl-title');
   el.textContent = t(win ? 'over.win' : 'over.lose');
@@ -616,9 +636,13 @@ function showOver(win, me, foe) {
 }
 function showOverLocal(g) {
   const win = g.winner === 'a';
-  Snd.over(true);
+  Portal.gameplayStop();
+  Snd.over(App.mode === 'solo' ? win : true);
   const el = $('ovl-title');
-  el.textContent = t(win ? 'over.p1Win' : 'over.p2Win');
+  if (App.mode === 'solo' && win) Portal.happyTime();
+  el.textContent = App.mode === 'solo'
+    ? t(win ? 'over.soloWin' : 'over.soloLose')
+    : t(win ? 'over.p1Win' : 'over.p2Win');
   el.className = 'ovl-title ' + (win ? 'win' : 'lose');
   $('ovl-score').textContent = `${g.scoreA} – ${g.scoreB}`;
   $('ovl-sub').textContent = '';
@@ -641,9 +665,12 @@ function resize() {
   cv.height = Math.round(h * dpr);
   cx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  const pad = 6;
-  const s = Math.min((w - pad * 2) / W, (h - pad * 2) / H);
-  VIEW = { ox: (w - W * s) / 2, oy: (h - H * s) / 2, s, w, h };
+  // The rink is 100 x 200. Standing it up in a wide window would leave most of
+  // the screen empty, so a landscape viewport gets it laid on its side: the
+  // player keeps the goal nearest them, it has just moved from the bottom edge
+  // to the left one. Only the drawing and the touch mapping know about this.
+  VIEW = View.layout(w, h, W, H);
+  document.body.classList.toggle('landscape', VIEW.turn);
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 200));
@@ -651,10 +678,15 @@ window.addEventListener('orientationchange', () => setTimeout(resize, 200));
 const fx = (x) => VIEW.ox + x * VIEW.s;
 const fy = (y) => VIEW.oy + y * VIEW.s;
 const fs = (v) => v * VIEW.s;
-/* screen -> field. In the second half the canvas is drawn rotated a half turn
-   about the viewport centre, so touches come back through the same turn. */
-const gx = (px) => { const v = (px - VIEW.ox) / VIEW.s; return App.flip ? W - v : v; };
-const gy = (py) => { const v = (py - VIEW.oy) / VIEW.s; return App.flip ? H - v : v; };
+
+/* screen -> field. Two turns can be in play at once and they compose: the
+   landscape quarter turn, which is about the shape of the window, and the
+   half-time half turn, which is about the phone having been spun round on the
+   table. Whatever the canvas did on the way out is undone here on the way in,
+   so the engine only ever sees canonical coordinates. */
+function toField(px, py) {
+  return View.toField(VIEW, px, py, App.flip, W, H);
+}
 
 function roundRect(c, x, y, w, h, r) {
   c.beginPath();
@@ -835,7 +867,7 @@ function clampFoe(x, y) {
 
 function pointerPos(e) {
   const rect = cv.getBoundingClientRect();
-  return { x: gx(e.clientX - rect.left), y: gy(e.clientY - rect.top) };
+  return toField(e.clientX - rect.left, e.clientY - rect.top);
 }
 
 function onDown(e) {
@@ -845,7 +877,7 @@ function onDown(e) {
   const p = pointerPos(e);
   // Which half was touched decides which paddle this finger owns.
   const who = p.y >= H / 2 ? 'me' : 'foe';
-  if (who === 'foe' && App.mode !== 'local') return;   // online: only my half
+  if (who === 'foe' && App.mode !== 'local') return;   // online / solo: only my half
   pointers.set(e.pointerId, who);
   applyPointer(who, p);
   e.preventDefault();
@@ -886,7 +918,7 @@ cv.addEventListener('mousemove', (e) => {
   if (current !== 's-game' || pointers.size) return;
   if (e.pointerType && e.pointerType !== 'mouse') return;
   const rect = cv.getBoundingClientRect();
-  const p = { x: gx(e.clientX - rect.left), y: gy(e.clientY - rect.top) };
+  const p = toField(e.clientX - rect.left, e.clientY - rect.top);
   if (p.y >= H / 2) applyPointer('me', p);
   else if (App.mode === 'local') applyPointer('foe', p);
 });
@@ -911,8 +943,10 @@ function frame(now) {
   if (dt > 0.1) dt = 0.1;
   if (current !== 's-game') return;
 
-  if (App.mode === 'local') stepLocal(dt);
-  else stepOnline(dt);
+  if (!App.paused) {
+    if (App.mode === 'online') stepOnline(dt);
+    else stepLocal(dt);
+  }
 
   render(dt);
 }
@@ -992,9 +1026,11 @@ function stepLocal(dt) {
   // setInput is a no-op unless the puck is live, so the countdown freeze
   // needs nothing special here.
   g.applyInput('a', myPad.tx, myPad.ty);
-  g.setInput('b', foePad.tx, foePad.ty);
+  if (App.bot) App.bot.think(g, dt);
+  else g.setInput('b', foePad.tx, foePad.ty);
 
   const prevState = g.state;
+  const prevA = g.scoreA, prevB = g.scoreB;
   g.step(dt);
 
   for (const e of g.events) {
@@ -1025,6 +1061,11 @@ function stepLocal(dt) {
     centerMsg(t('game.go'), '', 550);
   }
 
+  if (App.bot) {
+    if (g.scoreA !== prevA) App.bot.onGoal(false);
+    if (g.scoreB !== prevB) App.bot.onGoal(true);
+  }
+
   if (g.state === ST.OVER && prevState !== ST.OVER) showOverLocal(g);
 
   $('sc-me').textContent = g.scoreA;
@@ -1039,6 +1080,7 @@ function stepLocal(dt) {
   if (g.state !== ST.PLAYING) {
     myPad.x = myPad.tx = g.padA.x; myPad.y = myPad.ty = g.padA.y;
     foePad.x = foePad.tx = g.padB.x; foePad.y = foePad.ty = g.padB.y;
+    if (App.bot) App.bot.reset();
   }
 }
 
@@ -1046,12 +1088,23 @@ function render(dt) {
   cx.clearRect(0, 0, VIEW.w, VIEW.h);
 
   cx.save();
+
+  // Landscape: a quarter turn about the middle of the window, which puts the
+  // player's goal on the left wall and the opponent's on the right.
+  if (VIEW.turn) {
+    cx.translate(VIEW.w / 2, VIEW.h / 2);
+    cx.rotate(Math.PI / 2);
+    cx.translate(-W * VIEW.s / 2, -H * VIEW.s / 2);
+  }
+
   // Second half: the whole rink is drawn upside down, because the phone
   // itself has been turned around on the table.
   if (App.flip) {
-    cx.translate(VIEW.w / 2, VIEW.h / 2);
+    const mx = VIEW.turn ? W * VIEW.s / 2 : VIEW.w / 2;
+    const my = VIEW.turn ? H * VIEW.s / 2 : VIEW.h / 2;
+    cx.translate(mx, my);
     cx.rotate(Math.PI);
-    cx.translate(-VIEW.w / 2, -VIEW.h / 2);
+    cx.translate(-mx, -my);
   }
 
   if (R.shake > 0.01) {
@@ -1136,6 +1189,7 @@ function wireToggle(id, get, set) {
   return paint;
 }
 
+const SOLO_TARGET = 5;
 let onlineTarget = 7;
 let localTarget = 7;
 let onlineMode = Cfg.mode, localMode = Cfg.mode;
@@ -1270,8 +1324,48 @@ wireOptions('pick-theme', () => Cfg.theme, (v) => {
   if (repaintPuckChips) repaintPuckChips();
 });
 repaintPuckChips = wireOptions('pick-puck', () => Cfg.puck, (v) => {
+  if (Cfg.locked(v)) { offerSkins(v); return; }
   Cfg.puck = v;
   Cfg.save();
+});
+
+/* Marks the chips the player does not own yet, so the offer is never a
+   surprise behind a tap. */
+function paintPuckLocks() {
+  $('pick-puck').querySelectorAll('.chip[data-v]').forEach((c) => {
+    c.classList.toggle('is-locked', Cfg.locked(c.dataset.v));
+  });
+}
+paintPuckLocks();
+
+let wantedPuck = null;
+function offerSkins(key) {
+  wantedPuck = key;
+  $('skingate').classList.remove('hidden');
+}
+
+$('b-skin-no').addEventListener('click', () => {
+  Snd.ui();
+  wantedPuck = null;
+  $('skingate').classList.add('hidden');
+});
+
+$('b-skin-watch').addEventListener('click', () => {
+  Snd.ui();
+  const btn = $('b-skin-watch');
+  btn.disabled = true;
+  Portal.rewardedBreak().then((ok) => {
+    btn.disabled = false;
+    $('skingate').classList.add('hidden');
+    if (!ok) { toast(t('skin.fail')); return; }
+    Cfg.skins = true;
+    if (wantedPuck) Cfg.puck = wantedPuck;
+    wantedPuck = null;
+    Cfg.save();
+    paintPuckLocks();
+    if (repaintPuckChips) repaintPuckChips();
+    toast(t('skin.done'));
+  });
 });
 
 /* ============================ game entry ============================ */
@@ -1285,8 +1379,51 @@ async function keepAwake() {
 function releaseAwake() {
   if (wakeLock) { try { wakeLock.release(); } catch (_) {} wakeLock = null; }
 }
+/* A match is frozen for exactly two reasons: an ad is covering it, or the
+   player has gone somewhere else. Both want the same thing — no sound, no
+   physics — so both go through here.
+
+   Coming back from either, a rally that was live restarts with the 3-2-1
+   rather than dropping the player straight onto a moving puck. Online is the
+   exception: the server never stopped, so there is nothing to restart. */
+function pauseMatch() {
+  if (App.paused) return;
+  App.paused = true;
+  Snd.on = false;
+  releaseAwake();
+  Portal.gameplayStop();
+}
+
+function resumeMatch() {
+  if (!App.paused) return;
+  App.paused = false;
+  Snd.on = true;
+  lastFrame = performance.now();
+  if (current !== 's-game') return;
+  if (App.game && App.game.state === ST.PLAYING) {
+    App.game.startCountdown();
+    App.lastCd = -1;
+    if (App.bot) App.bot.reset();
+  }
+  keepAwake();
+  Portal.gameplayStart();
+}
+
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && current === 's-game') keepAwake();
+  if (document.visibilityState === 'visible') {
+    if (current === 's-game' && !Portal.adOpen) resumeMatch();
+  } else if (current === 's-game') {
+    pauseMatch();
+  }
+});
+
+/* The portal bridge owns silencing and freezing the rink for an ad; these are
+   the four levers it pulls. */
+Portal.connect({
+  pause: () => { if (current === 's-game') pauseMatch(); },
+  resume: () => { if (current === 's-game') resumeMatch(); },
+  mute: () => { Snd.on = false; },
+  unmute: () => { Snd.on = true; },
 });
 
 function resetRender() {
@@ -1311,10 +1448,35 @@ function enterGame() {
   hideOver();
   show('s-game');
   keepAwake();
+  Portal.gameplayStart();
+}
+
+/* Solo. There is no setup screen on purpose: the whole point of this button is
+   that a player who has never seen the game is holding a mallet a second after
+   tapping it. Everything it needs is either remembered or sensible. */
+function startSolo() {
+  App.mode = 'solo';
+  App.target = SOLO_TARGET;
+  App.padR = Cfg.padR();
+  App.gameMode = MODES.CLASSIC;
+  App.lastState = -1;
+  App.game = new Game({
+    target: SOLO_TARGET, padR: App.padR, halftime: false, mode: MODES.CLASSIC,
+  });
+  App.bot = new Bot({});
+  App.halfAt = 0;
+  App.game.startCountdown();
+  setFlip(false);
+  $('hud-me').textContent = t('game.p1');
+  $('hud-foe').textContent = t('game.bot');
+  setHudTarget(SOLO_TARGET, 0, MODES.CLASSIC);
+  $('hud-ping').parentElement.style.display = 'none';
+  enterGame();
 }
 
 function startLocal() {
   App.mode = 'local';
+  App.bot = null;
   App.target = localTarget;
   App.padR = Cfg.padR();
   App.gameMode = localMode;
@@ -1334,9 +1496,12 @@ function startLocal() {
 
 function leaveGame() {
   releaseAwake();
+  Portal.gameplayStop();
   if (App.mode === 'online') { Net.send({ t: 'leave' }); Net.wantRoom = null; }
   App.mode = null;
   App.game = null;
+  App.bot = null;
+  App.paused = false;
   App.snap = null;
   setFlip(false);
   hideOver();
@@ -1374,10 +1539,12 @@ $('b-settings').addEventListener('click', () => { Snd.ui(); show('s-set'); });
 $('b-online').addEventListener('click', () => {
   Snd.ui();
   $('hud-ping').parentElement.style.display = '';
+  document.body.classList.add('net-used');
   show('s-online');
   Net.connect();
 });
 
+$('b-play').addEventListener('click', () => { Snd.ui(); startSolo(); });
 $('b-local').addEventListener('click', () => { Snd.ui(); show('s-local'); });
 $('b-local-start').addEventListener('click', () => { Snd.ui(); startLocal(); });
 
@@ -1440,44 +1607,33 @@ $('b-menu').addEventListener('click', () => { Snd.ui(); leaveGame(); });
 
 $('b-again').addEventListener('click', () => {
   Snd.ui();
-  if (App.mode === 'local') {
-    App.game.restart();
-    App.lastCd = -1;
-    setFlip(false);
-    hideOver();
-  } else {
-    Net.send({ t: 'restart' });
-    hideOver();
-  }
+  const again = () => {
+    if (App.mode === 'online') {
+      Net.send({ t: 'restart' });
+      hideOver();
+    } else {
+      App.game.restart();
+      if (App.bot) App.bot.reset();
+      App.lastCd = -1;
+      setFlip(false);
+      hideOver();
+    }
+    Portal.gameplayStart();
+  };
+  // The break resolves whether or not an ad ran, so the rematch is never
+  // hostage to an ad blocker or a portal that decided not to fill.
+  $('b-again').disabled = true;
+  Portal.commercialBreak().then(() => {
+    $('b-again').disabled = false;
+    again();
+  });
 });
-
-/* The very first launch asks which language to play in — English is already
-   ticked. The answer is stored, so this never appears again; Settings is where
-   it changes from then on. */
-(function languageGate() {
-  const gate = $('langgate');
-  if (I18n.chosen()) return;
-  let picked = 'en';
-  I18n.set(picked, false);
-  gate.classList.remove('hidden');
-  $('pick-lang-first').querySelectorAll('.chip').forEach((c) => {
-    c.addEventListener('click', () => {
-      Snd.ui();
-      picked = c.dataset.v;
-      I18n.set(picked, false);   // preview it, but do not answer for them yet
-    });
-  });
-  $('b-lang-go').addEventListener('click', () => {
-    Snd.ui();
-    I18n.set(picked);            // now it is remembered
-    gate.classList.add('hidden');
-  });
-}());
 
 /* Deep link: ?oda=ABCD jumps straight into a room. */
 (function deepLink() {
   const code = new URLSearchParams(location.search).get('oda');
   if (!code) return;
+  document.body.classList.add('net-used');
   $('i-code').value = code.toUpperCase().slice(0, 4);
   show('s-online');
   Net.connect();
@@ -1495,5 +1651,15 @@ reconnectButtons().forEach((b) => b.addEventListener('click', reconnectNow));
 
 I18n.apply();
 resize();
-Net.connect();
+
+/* The portal is told the game is loading, then that it is ready. Nothing waits
+   on it: init() resolves either way, and a blocked SDK just means the plain
+   game. Online is dialled only when the player asks for it — a solo player
+   should never be held up by a socket they are not going to use. */
+Portal.loadingStart();
+Portal.init().then(() => {
+  Portal.loadingFinished();
+  paintPuckLocks();
+  if (repaintPuckChips) repaintPuckChips();
+});
 }());
