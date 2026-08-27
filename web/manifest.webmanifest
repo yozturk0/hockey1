@@ -1,8 +1,8 @@
 {
   "name": "Air Hockey — Online",
   "short_name": "Air Hockey",
-  "description": "Oda kodu paylaş, anında online hava hokeyi oyna.",
-  "lang": "tr",
+  "description": "Share a room code with a friend and play air hockey online right away.",
+  "lang": "en",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",
@@ -10,8 +10,22 @@
   "background_color": "#070b14",
   "theme_color": "#070b14",
   "icons": [
-    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }

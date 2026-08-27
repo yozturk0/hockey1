@@ -1,4 +1,4 @@
-# Air Hockey — Online (Türkçe)
+# Air Hockey — Online (Türkçe / English)
 
 Oda kodu paylaşarak oynanan gerçek zamanlı hava hokeyi. **Kayıt yok, hesap yok, indirme zorunluluğu yok.**
 Web tarayıcısındaki bir oyuncu ile iPhone/iPad uygulamasındaki bir oyuncu **aynı maçta** oynayabilir.
@@ -7,11 +7,30 @@ Web tarayıcısındaki bir oyuncu ile iPhone/iPad uygulamasındaki bir oyuncu **
 hockey1/
 ├── server/server.js      Otoriter WebSocket sunucusu + statik site servisi
 ├── web/                  Tarayıcı istemcisi (site burası)
-│   └── engine.js         Fizik motoru — sunucu da bu dosyayı kullanır
+│   ├── engine.js         Fizik motoru — sunucu da bu dosyayı kullanır
+│   └── i18n.js           Bütün metinler: Türkçe + İngilizce sözlük
 ├── ios/                  Xcode projesi (SwiftUI; tek hedef, iPhone + iPad)
+│   └── AirHockey/Strings.swift   i18n.js'in Swift ikizi
 ├── test/                 Motor + sunucu testleri
 └── Dockerfile, fly.toml, render.yaml
 ```
+
+## Dil
+
+Uygulama Türkçe ve İngilizce konuşur. **İlk açılışta** hangi dilde oynanacağı
+sorulur — İngilizce hazır seçilidir, ikinci seçenek Türkçe'dir. Verilen cevap
+saklanır, o pop-up bir daha çıkmaz; dil bundan sonra **Ayarlar**'ın en üstündeki
+"Dil" kartından değiştirilir ve değişiklik anında bütün ekranlara yansır.
+
+Bütün metinler tek bir sözlükte durur: web'de `web/i18n.js`, iOS'ta
+`ios/AirHockey/Strings.swift`. **İkisi birbirinin ikizidir** — bir ekrana satır
+eklerken ya da çıkarırken ikisini birlikte güncelle. Sunucunun gönderdiği hata
+mesajları da artık bir anahtar (`k`) taşır, böylece istemci onları kendi dilinde
+gösterir.
+
+İngilizce çeviri bilerek **sade** tutulmuştur: kısa cümleler, günlük kelimeler —
+çocukların ve İngilizcesi zayıf olanların rahatça anlayacağı bir dil. Yeni satır
+eklerken aynı tonu koru.
 
 ---
 

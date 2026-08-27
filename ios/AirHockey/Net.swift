@@ -87,7 +87,7 @@ final class Net: NSObject {
     func connect() {
         guard task == nil || task?.state != .running else { return }
         guard let url = wsURL else {
-            delegate?.netStatus(.failed("Sunucu adresi geçersiz"))
+            delegate?.netStatus(.failed(S("net.badURL")))
             return
         }
         closedByUs = false
@@ -141,7 +141,7 @@ final class Net: NSObject {
             // Silence for three pings' worth means the socket is a ghost: it
             // still says "connected" while nothing is coming through.
             if Date().timeIntervalSince(self.lastRx) > 6 {
-                self.delegate?.netStatus(.failed("Bağlantı koptu"))
+                self.delegate?.netStatus(.failed(S("net.lost")))
                 self.reconnect()
                 return
             }
@@ -192,7 +192,7 @@ final class Net: NSObject {
             case .failure:
                 self.pingTimer?.invalidate()
                 if !self.closedByUs {
-                    self.delegate?.netStatus(.failed("Bağlantı koptu"))
+                    self.delegate?.netStatus(.failed(S("net.lost")))
                     self.scheduleRetry()
                 }
             case .success(let msg):
@@ -308,7 +308,7 @@ extension Net: URLSessionWebSocketDelegate {
         guard webSocketTask === task else { return }
         pingTimer?.invalidate()
         if !closedByUs {
-            delegate?.netStatus(.failed("Bağlantı kapandı"))
+            delegate?.netStatus(.failed(S("net.closed")))
             scheduleRetry()
         }
     }

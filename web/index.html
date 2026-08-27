@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>Air Hockey — Online</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#070b14">
-<meta name="description" content="Arkadaşınla oda kodu paylaş, anında online hava hokeyi oyna. Kayıt yok, kurulum yok.">
+<meta name="description" content="Share a room code with a friend and play air hockey online right away. No sign up, no setup.">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -17,7 +17,7 @@
 </head>
 <body>
 
-<!-- ============ MENÜ ============ -->
+<!-- ============ MENÜ / MENU ============ -->
 <section class="screen" id="s-menu">
   <div class="stack">
     <div class="logo">
@@ -25,39 +25,39 @@
       <span class="logo-b">HOCKEY</span>
       <i class="logo-puck"></i>
     </div>
-    <p class="tagline">Oda kodunu paylaş, anında oyna.<br>Kayıt yok, indirme yok.</p>
+    <p class="tagline" data-i18n-html="menu.tagline">Share the room code and play right away.<br>No sign up, no download.</p>
 
     <div class="btns">
       <button class="btn btn-primary" id="b-online">
         <span class="btn-ico">🌐</span>
-        <span class="btn-txt"><b>Online Oyna</b><small>Arkadaşınla, uzaktan</small></span>
+        <span class="btn-txt"><b data-i18n="menu.online">Play Online</b><small data-i18n="menu.onlineSub">With a friend, far away</small></span>
       </button>
       <button class="btn" id="b-local">
         <span class="btn-ico">📱</span>
-        <span class="btn-txt"><b>Aynı Telefonda 2 Kişi</b><small>Tek ekran, çift dokunuş</small></span>
+        <span class="btn-txt"><b data-i18n="menu.local">2 Players on One Phone</b><small data-i18n="menu.localSub">One screen, two fingers</small></span>
       </button>
     </div>
 
     <label class="namefield">
-      <span>Adın</span>
-      <input id="i-name" type="text" maxlength="14" placeholder="Oyuncu" autocomplete="off" autocapitalize="words" spellcheck="false">
+      <span data-i18n="menu.name">Your name</span>
+      <input id="i-name" type="text" maxlength="14" data-i18n-ph="menu.namePh" placeholder="Player" autocomplete="off" autocapitalize="words" spellcheck="false">
     </label>
 
-    <button class="btn btn-ghost btn-gear" id="b-settings"><span class="gear-ico">⚙️</span>Ayarlar</button>
+    <button class="btn btn-ghost btn-gear" id="b-settings"><span class="gear-ico">⚙️</span><span data-i18n="menu.settings">Settings</span></button>
   </div>
-<footer class="foot"><span id="conn-dot" class="dot"></span><span id="conn-txt">Bağlanıyor…</span></footer>
+<footer class="foot"><span id="conn-dot" class="dot"></span><span id="conn-txt">Connecting…</span></footer>
 </section>
 
-<!-- ============ ONLINE SEÇİM ============ -->
+<!-- ============ ONLINE SEÇİM / ONLINE SETUP ============ -->
 <section class="screen hidden" id="s-online">
   <div class="stack">
-    <h2 class="title">Online Oyna</h2>
+    <h2 class="title" data-i18n="on.title">Play Online</h2>
 
     <div class="card">
-      <h3>Oda Oluştur</h3>
-      <p class="hint">Sen kur, kodu arkadaşına gönder.</p>
+      <h3 data-i18n="on.create">Make a Room</h3>
+      <p class="hint" data-i18n="on.createHint">You make the room, then send the code to your friend.</p>
       <div class="scorepick" id="pick-online">
-        <span class="scorepick-label">Kaç golde biter?</span>
+        <span class="scorepick-label" data-i18n="com.target">How many goals to win?</span>
         <div class="chips">
           <button class="chip" data-v="5">5</button>
           <button class="chip" data-v="6">6</button>
@@ -67,54 +67,54 @@
         </div>
       </div>
       <div class="scorepick" id="mode-online">
-        <span class="scorepick-label">Oyun modu</span>
+        <span class="scorepick-label" data-i18n="com.mode">Game type</span>
         <div class="chips">
-          <button class="chip chip-mode" data-v="klasik"><b>Klasik</b><small>Kurallar sabit</small></button>
-          <button class="chip chip-mode" data-v="sansli"><b>Şanslı</b><small>Sopalar büyür, buz değişir</small></button>
+          <button class="chip chip-mode" data-v="klasik"><b data-i18n="com.classic">Classic</b><small data-i18n="com.classicSub">Rules stay the same</small></button>
+          <button class="chip chip-mode" data-v="sansli"><b data-i18n="com.lucky">Lucky</b><small data-i18n="com.luckySub">Paddles grow, ice changes</small></button>
         </div>
       </div>
       <button class="toggle is-on" id="half-online" role="switch" aria-checked="true">
-        <span class="toggle-txt"><b>Devre arası</b><small id="half-online-sub">Yarı yolda kısa mola</small></span>
+        <span class="toggle-txt"><b data-i18n="com.half">Half time</b><small id="half-online-sub" data-i18n="com.halfSub">A short break in the middle</small></span>
         <span class="toggle-knob"></span>
       </button>
       <div class="plan" id="plan-online">
-        <span class="plan-half"><b>4</b> golde <i>devre</i></span>
+        <span class="plan-half"><b>4</b> <span data-i18n="plan.goals">goals</span> <i data-i18n="plan.half">half time</i></span>
         <span class="plan-arrow">→</span>
-        <span class="plan-end"><b>7</b> golde <i>biter</i></span>
+        <span class="plan-end"><b>7</b> <span data-i18n="plan.goals">goals</span> <i data-i18n="plan.end">game ends</i></span>
       </div>
-      <button class="btn btn-primary" id="b-create">Oda Oluştur</button>
+      <button class="btn btn-primary" id="b-create" data-i18n="on.createBtn">Make Room</button>
     </div>
 
     <div class="card">
-      <h3>Odaya Katıl</h3>
-      <p class="hint">Arkadaşının gönderdiği 4 haneli kodu gir.</p>
+      <h3 data-i18n="on.join">Join a Room</h3>
+      <p class="hint" data-i18n="on.joinHint">Type the 4-letter code your friend sent you.</p>
       <input class="codebox" id="i-code" type="text" inputmode="text" maxlength="4" placeholder="A B C D" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
-      <button class="btn btn-primary" id="b-join">Katıl</button>
+      <button class="btn btn-primary" id="b-join" data-i18n="on.joinBtn">Join</button>
     </div>
 
-    <button class="btn btn-ghost" data-back="s-menu">← Geri</button>
+    <button class="btn btn-ghost" data-back="s-menu" data-i18n="com.back">← Back</button>
   </div>
 </section>
 
-<!-- ============ LOBİ ============ -->
+<!-- ============ LOBİ / LOBBY ============ -->
 <section class="screen hidden" id="s-lobby">
   <div class="stack">
-    <h2 class="title">Oda Kodu</h2>
+    <h2 class="title" data-i18n="lob.title">Room Code</h2>
     <div class="bigcode" id="lobby-code">----</div>
     <div class="btns btns-row">
-      <button class="btn btn-sm" id="b-copy">Kodu Kopyala</button>
-      <button class="btn btn-sm" id="b-share">Paylaş</button>
+      <button class="btn btn-sm" id="b-copy" data-i18n="lob.copy">Copy Code</button>
+      <button class="btn btn-sm" id="b-share" data-i18n="lob.share">Share</button>
     </div>
 
     <div class="players">
-      <div class="pslot is-me"><i></i><b id="p-a">Oyuncu 1</b><small>Sen</small></div>
+      <div class="pslot is-me"><i></i><b id="p-a">Player 1</b><small data-i18n="lob.you">You</small></div>
       <span class="vs">VS</span>
-      <div class="pslot" id="slot-b"><i></i><b id="p-b">Bekleniyor…</b><small id="p-b-sub">Kodu paylaş</small></div>
+      <div class="pslot" id="slot-b"><i></i><b id="p-b">Waiting…</b><small id="p-b-sub">Share the code</small></div>
     </div>
 
     <div class="rules" id="lobby-rules">
       <div class="scorepick" id="pick-lobby">
-        <span class="scorepick-label">Kaç golde biter?</span>
+        <span class="scorepick-label" data-i18n="com.target">How many goals to win?</span>
         <div class="chips">
           <button class="chip" data-v="5">5</button>
           <button class="chip" data-v="6">6</button>
@@ -124,37 +124,37 @@
         </div>
       </div>
       <div class="scorepick" id="mode-lobby">
-        <span class="scorepick-label">Oyun modu</span>
+        <span class="scorepick-label" data-i18n="com.mode">Game type</span>
         <div class="chips">
-          <button class="chip chip-mode" data-v="klasik"><b>Klasik</b><small>Kurallar sabit</small></button>
-          <button class="chip chip-mode" data-v="sansli"><b>Şanslı</b><small>Sopalar büyür, buz değişir</small></button>
+          <button class="chip chip-mode" data-v="klasik"><b data-i18n="com.classic">Classic</b><small data-i18n="com.classicSub">Rules stay the same</small></button>
+          <button class="chip chip-mode" data-v="sansli"><b data-i18n="com.lucky">Lucky</b><small data-i18n="com.luckySub">Paddles grow, ice changes</small></button>
         </div>
       </div>
       <button class="toggle is-on" id="half-lobby" role="switch" aria-checked="true">
-        <span class="toggle-txt"><b>Devre arası</b><small id="half-lobby-sub">Yarı yolda kısa mola</small></span>
+        <span class="toggle-txt"><b data-i18n="com.half">Half time</b><small id="half-lobby-sub" data-i18n="com.halfSub">A short break in the middle</small></span>
         <span class="toggle-knob"></span>
       </button>
-      <p class="hint" id="lobby-hostnote">Kuralları sen belirliyorsun. Rakip katılınca oyun başlar.</p>
+      <p class="hint" id="lobby-hostnote" data-i18n="lob.hostNote">You pick the rules. The game starts when your friend joins.</p>
     </div>
-    <p class="hint hidden" id="lobby-guestnote">Oda sahibi kuralları belirledi.</p>
+    <p class="hint hidden" id="lobby-guestnote" data-i18n="lob.guestNote">The person who made the room picked the rules.</p>
     <div class="plan" id="plan-lobby">
-      <span class="plan-half"><b>4</b> golde <i>devre</i></span>
+      <span class="plan-half"><b>4</b> <span data-i18n="plan.goals">goals</span> <i data-i18n="plan.half">half time</i></span>
       <span class="plan-arrow">→</span>
-      <span class="plan-end"><b>7</b> golde <i>biter</i></span>
+      <span class="plan-end"><b>7</b> <span data-i18n="plan.goals">goals</span> <i data-i18n="plan.end">game ends</i></span>
     </div>
 
-    <button class="btn btn-ghost" id="b-lobby-leave">← Odadan Çık</button>
+    <button class="btn btn-ghost" id="b-lobby-leave" data-i18n="lob.leave">← Leave Room</button>
   </div>
 </section>
 
-<!-- ============ YEREL KURULUM ============ -->
+<!-- ============ YEREL KURULUM / SAME-PHONE SETUP ============ -->
 <section class="screen hidden" id="s-local">
   <div class="stack">
-    <h2 class="title">Aynı Telefonda 2 Kişi</h2>
-    <p class="tagline">Telefonu aranıza koyun.<br><b class="c-me">Alt yarı</b> bir oyuncunun, <b class="c-foe">üst yarı</b> diğerinin.</p>
+    <h2 class="title" data-i18n="loc.title">2 Players on One Phone</h2>
+    <p class="tagline" data-i18n-html="loc.tagline">Put the phone between you.<br><b class="c-me">The bottom half</b> is for one player, <b class="c-foe">the top half</b> for the other.</p>
     <div class="rules">
       <div class="scorepick" id="pick-local">
-        <span class="scorepick-label">Kaç golde biter?</span>
+        <span class="scorepick-label" data-i18n="com.target">How many goals to win?</span>
         <div class="chips">
           <button class="chip" data-v="5">5</button>
           <button class="chip" data-v="6">6</button>
@@ -164,85 +164,94 @@
         </div>
       </div>
       <div class="scorepick" id="mode-local">
-        <span class="scorepick-label">Oyun modu</span>
+        <span class="scorepick-label" data-i18n="com.mode">Game type</span>
         <div class="chips">
-          <button class="chip chip-mode" data-v="klasik"><b>Klasik</b><small>Kurallar sabit</small></button>
-          <button class="chip chip-mode" data-v="sansli"><b>Şanslı</b><small>Sopalar büyür, buz değişir</small></button>
+          <button class="chip chip-mode" data-v="klasik"><b data-i18n="com.classic">Classic</b><small data-i18n="com.classicSub">Rules stay the same</small></button>
+          <button class="chip chip-mode" data-v="sansli"><b data-i18n="com.lucky">Lucky</b><small data-i18n="com.luckySub">Paddles grow, ice changes</small></button>
         </div>
       </div>
       <button class="toggle is-on" id="half-local" role="switch" aria-checked="true">
-        <span class="toggle-txt"><b>Devre arası</b><small id="half-local-sub">Yarı yolda telefonu çevirin</small></span>
+        <span class="toggle-txt"><b data-i18n="com.half">Half time</b><small id="half-local-sub" data-i18n="loc.halfSub">Turn the phone around in the middle</small></span>
         <span class="toggle-knob"></span>
       </button>
       <div class="plan" id="plan-local">
-        <span class="plan-half"><b>4</b> golde <i>devre</i></span>
+        <span class="plan-half"><b>4</b> <span data-i18n="plan.goals">goals</span> <i data-i18n="plan.half">half time</i></span>
         <span class="plan-arrow">→</span>
-        <span class="plan-end"><b>7</b> golde <i>biter</i></span>
+        <span class="plan-end"><b>7</b> <span data-i18n="plan.goals">goals</span> <i data-i18n="plan.end">game ends</i></span>
       </div>
-      <p class="hint" id="hint-local-half">Devrede telefonu 180° çevirirsiniz — herkes bir yarıyı da diğer taraftan oynar.</p>
+      <p class="hint" id="hint-local-half" data-i18n="loc.halfHint">At half time you turn the phone around 180° — so you both get to play from each side.</p>
     </div>
-    <button class="btn btn-primary" id="b-local-start">Başlat</button>
-    <button class="btn btn-ghost" data-back="s-menu">← Geri</button>
+    <button class="btn btn-primary" id="b-local-start" data-i18n="loc.start">Start</button>
+    <button class="btn btn-ghost" data-back="s-menu" data-i18n="com.back">← Back</button>
   </div>
 </section>
 
-<!-- ============ AYARLAR ============ -->
+<!-- ============ AYARLAR / SETTINGS ============ -->
 <section class="screen hidden" id="s-set">
   <div class="stack">
-    <h2 class="title">Ayarlar</h2>
+    <h2 class="title" data-i18n="set.title">Settings</h2>
 
     <div class="card">
-      <h3>Zemin</h3>
-      <p class="hint">Çocuklar için açık ve sade zeminler daha rahat görünür.</p>
-      <div class="chips chips-wrap" id="pick-theme">
-        <button class="chip chip-theme" data-v="krem">Krem</button>
-        <button class="chip chip-theme" data-v="buz">Buz</button>
-        <button class="chip chip-theme" data-v="cim">Çim</button>
-        <button class="chip chip-theme" data-v="gece">Gece</button>
+      <h3 data-i18n="lang.title">Language</h3>
+      <p class="hint" data-i18n="lang.hint">You can change the language here any time.</p>
+      <div class="chips chips-wrap" id="pick-lang">
+        <button class="chip chip-lang" data-v="en">English</button>
+        <button class="chip chip-lang" data-v="tr">Türkçe</button>
       </div>
     </div>
 
     <div class="card">
-      <h3>Top Rengi</h3>
-      <p class="hint">Tema, sahaya uygun olanı seçer.</p>
+      <h3 data-i18n="set.floor">Floor</h3>
+      <p class="hint" data-i18n="set.floorHint">Light, simple floors are easier for kids to see.</p>
+      <div class="chips chips-wrap" id="pick-theme">
+        <button class="chip chip-theme" data-v="krem" data-i18n="theme.krem">Cream</button>
+        <button class="chip chip-theme" data-v="buz" data-i18n="theme.buz">Ice</button>
+        <button class="chip chip-theme" data-v="cim" data-i18n="theme.cim">Grass</button>
+        <button class="chip chip-theme" data-v="gece" data-i18n="theme.gece">Night</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 data-i18n="set.puck">Puck Colour</h3>
+      <p class="hint" data-i18n="set.puckHint">"Theme" picks the colour that fits the floor.</p>
       <div class="chips chips-wrap" id="pick-puck"></div>
     </div>
 
-    <button class="btn btn-ghost" data-back="s-menu">← Geri</button>
+    <button class="btn btn-ghost" data-back="s-menu" data-i18n="com.back">← Back</button>
   </div>
 </section>
 
-<!-- ============ OYUN ============ -->
+<!-- ============ OYUN / MATCH ============ -->
 <section class="screen screen-game hidden" id="s-game">
   <canvas id="cv"></canvas>
 
   <div class="hud">
     <div class="hud-top">
-      <div class="hud-name" id="hud-foe">Rakip</div>
+      <div class="hud-name" id="hud-foe">Player 2</div>
       <div class="hud-score" id="sc-foe">0</div>
     </div>
     <div class="hud-bot">
       <div class="hud-score" id="sc-me">0</div>
-      <div class="hud-name" id="hud-me">Sen</div>
+      <div class="hud-name" id="hud-me">You</div>
       <div class="hud-meta">
-        <div class="hud-target" id="hud-target">7 GOL</div>
+        <div class="hud-target" id="hud-target">7 GOALS</div>
         <div class="hud-net"><span id="hud-ping">—</span></div>
       </div>
     </div>
-    <button class="hud-reconnect" id="b-hud-reconnect" aria-label="Sunucuya yeniden bağlan">⟳</button>
-    <button class="hud-exit" id="b-exit" aria-label="Çık">✕</button>
+    <button class="hud-reconnect" id="b-hud-reconnect" data-i18n-aria="game.reconnect" aria-label="Connect to the server again">⟳</button>
+    <button class="hud-exit" id="b-exit" data-i18n-aria="game.exit" aria-label="Leave">✕</button>
   </div>
 
   <div class="center-msg hidden" id="cmsg"><span id="cmsg-txt"></span></div>
 
   <div class="overlay half hidden" id="half">
     <div class="half-msg half-flip" id="half-top">
-      <b>DEVRE</b>
-      <span>Telefonu 180° çevirin</span>
+      <b data-i18n="half.word">HALF TIME</b>
+      <span data-i18n="half.turn">Turn the phone around</span>
     </div>
 
     <div class="half-core">
-      <div class="half-title" id="half-title">DEVRE</div>
+      <div class="half-title" id="half-title" data-i18n="half.word">HALF TIME</div>
       <div class="half-icon" id="half-icon" aria-hidden="true">
         <svg viewBox="0 0 120 120">
           <rect class="hi-phone" x="42" y="26" width="36" height="68" rx="8"/>
@@ -255,37 +264,54 @@
         </svg>
       </div>
       <div class="half-score" id="half-score">0 – 0</div>
-      <p class="half-note" id="half-note">Alt taraf yukarı, üst taraf aşağı.<br>Böylece herkes ekranın iki yanını da kullanır.</p>
-      <button class="btn btn-primary" id="b-half">Çevirdik, Devam</button>
-      <p class="hint hidden" id="half-wait">Rakip bekleniyor…</p>
+      <p class="half-note" id="half-note">The bottom player goes up, the top player goes down.<br>That way you both use each side of the screen.</p>
+      <button class="btn btn-primary" id="b-half">We turned it, go on</button>
+      <p class="hint hidden" id="half-wait" data-i18n="half.waitFoe">Waiting for the other player…</p>
     </div>
 
     <div class="half-msg" id="half-bot">
-      <b>DEVRE</b>
-      <span>Telefonu 180° çevirin</span>
+      <b data-i18n="half.word">HALF TIME</b>
+      <span data-i18n="half.turn">Turn the phone around</span>
     </div>
   </div>
 
   <div class="overlay hidden" id="ovl">
     <div class="ovl-card">
-      <div class="ovl-title" id="ovl-title">Maç Bitti</div>
+      <div class="ovl-title" id="ovl-title">You Won!</div>
       <div class="ovl-score" id="ovl-score">0 – 0</div>
       <p class="ovl-sub" id="ovl-sub"></p>
-      <button class="btn btn-primary" id="b-again">Tekrar Oyna</button>
-      <button class="btn btn-ghost" id="b-menu">Ana Menü</button>
+      <button class="btn btn-primary" id="b-again" data-i18n="over.again">Play Again</button>
+      <button class="btn btn-ghost" id="b-menu" data-i18n="over.menu">Main Menu</button>
     </div>
   </div>
 </section>
 
+<!-- ============ İLK AÇILIŞ: DİL / FIRST LAUNCH: LANGUAGE ============ -->
+<!-- Shown once, on the very first launch. The answer is remembered, and the
+     language stays changeable in Settings from then on. -->
+<div class="overlay langgate hidden" id="langgate">
+  <div class="ovl-card">
+    <div class="lang-flag" aria-hidden="true">🏒</div>
+    <div class="ovl-title" data-i18n="lang.pick">Language / Dil</div>
+    <p class="ovl-sub" data-i18n="lang.sub">Which language do you want to play in?</p>
+    <div class="chips chips-wrap langgate-chips" id="pick-lang-first">
+      <button class="chip chip-lang is-on" data-v="en">English</button>
+      <button class="chip chip-lang" data-v="tr">Türkçe</button>
+    </div>
+    <button class="btn btn-primary" id="b-lang-go" data-i18n="lang.go">Go</button>
+  </div>
+</div>
+
 <!-- Always in the same top-right spot: a frozen match is one tap from live
      again instead of a wait. The rink has its own copy inside the HUD. -->
-<button class="reconnect" id="b-reconnect" title="Sunucuya yeniden bağlan"
-        aria-label="Sunucuya yeniden bağlan">⟳</button>
+<button class="reconnect" id="b-reconnect" data-i18n-title="game.reconnect" data-i18n-aria="game.reconnect"
+        title="Connect to the server again" aria-label="Connect to the server again">⟳</button>
 
 <div class="toast hidden" id="toast"></div>
 
 <script src="engine.js"></script>
 <script src="sound.js"></script>
+<script src="i18n.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

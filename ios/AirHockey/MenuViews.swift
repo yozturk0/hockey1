@@ -3,6 +3,11 @@ import SwiftUI
 struct RootView: View {
     @StateObject private var m = GameModel()
     @ObservedObject private var prefs = Prefs.shared
+    @ObservedObject private var lang = Lang.shared
+    /// The very first launch asks which language to play in. Answering stores
+    /// the choice, so the question never comes back; Settings is where it
+    /// changes from then on.
+    @State private var askLanguage = !Lang.shared.answered
 
     var body: some View {
         ZStack {
@@ -34,7 +39,15 @@ struct RootView: View {
         }
         .animation(.easeOut(duration: 0.22), value: m.toast)
         .preferredColorScheme(PAL.glow ? .dark : .light)
+        // Every screen reads its text through S(...), which is a plain
+        // function rather than a binding; re-keying the tree is what makes a
+        // language switch show up everywhere at once.
+        .id(lang.code)
+        .onChange(of: lang.code) { _, _ in m.retranslateDefaults() }
         .sheet(isPresented: $m.showSettings) { SettingsView(m: m) }
+        .fullScreenCover(isPresented: $askLanguage) {
+            LanguageGate { askLanguage = false }
+        }
         .onAppear { Sound.shared.start() }
         .onOpenURL { m.openDeepLink($0) }
     }
@@ -92,27 +105,27 @@ struct MenuView: View {
                     .foregroundStyle(T.txt)
             }
 
-            Text("Oda kodunu paylaş, anında oyna.\nKayıt yok, indirme yok.")
+            Text(S("menu.tagline"))
                 .font(.system(size: sz(14)))
                 .foregroundStyle(T.dim)
                 .multilineTextAlignment(.center)
 
             VStack(spacing: 11) {
                 Button { m.startOnline() } label: {
-                    row(icon: "globe", title: "Online Oyna", sub: "Arkadaşınla, uzaktan")
+                    row(icon: "globe", title: S("menu.online"), sub: S("menu.onlineSub"))
                 }
                 .buttonStyle(PrimaryButton())
 
                 Button { m.go(.local) } label: {
-                    row(icon: Device.isPad ? "ipad.gen2" : "iphone.gen3", title: Device.sameDevice, sub: "Tek ekran, çift dokunuş")
+                    row(icon: Device.isPad ? "ipad.gen2" : "iphone.gen3", title: Device.sameDevice, sub: S("menu.localSub"))
                 }
                 .buttonStyle(PlainButton())
             }
             .padding(.top, 6)
 
             HStack(spacing: 12) {
-                Text("Adın").font(.system(size: sz(13), weight: .semibold)).foregroundStyle(T.dim)
-                TextField("Oyuncu", text: $name)
+                Text(S("menu.name")).font(.system(size: sz(13), weight: .semibold)).foregroundStyle(T.dim)
+                TextField(S("menu.namePh"), text: $name)
                     .textInputAutocapitalization(.words)
                     .autocorrectionDisabled()
                     .font(.system(size: sz(15)))
@@ -125,7 +138,7 @@ struct MenuView: View {
             Spacer()
 
             Button { m.showSettings = true } label: {
-                Text("Ayarlar")
+                Text(S("menu.settings"))
                     .font(.system(size: sz(16), weight: .bold))
                     .foregroundStyle(T.txt)
                     .frame(maxWidth: .infinity, minHeight: 52)
@@ -150,7 +163,7 @@ struct MenuView: View {
         }
         .padding(.horizontal, 20)
         .frame(maxWidth: Device.column)
-        .onAppear { if name.isEmpty && m.myName != "Oyuncu" { name = m.myName } }
+        .onAppear { if name.isEmpty && m.myName != S("menu.namePh") { name = m.myName } }
     }
 
     private func row(icon: String, title: String, sub: String) -> some View {
@@ -175,10 +188,10 @@ struct MenuView: View {
 
     private var statusText: String {
         switch m.status {
-        case .connected:  return "Sunucuya bağlı"
-        case .connecting: return "Bağlanıyor…"
+        case .connected:  return S("net.ok")
+        case .connecting: return S("net.connecting")
         case .failed(let e): return e
-        case .idle:       return "Çevrimdışı"
+        case .idle:       return S("net.idle")
         }
     }
 }
@@ -192,27 +205,27 @@ struct OnlineView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                Text("Online Oyna")
+                Text(S("on.title"))
                     .font(.system(size: sz(24), weight: .bold)).foregroundStyle(T.txt)
                     .padding(.top, 24)
 
                 card {
-                    Text("Oda Oluştur").font(.system(size: sz(17), weight: .bold)).foregroundStyle(T.txt)
-                    Text("Sen kur, kodu arkadaşına gönder.")
+                    Text(S("on.create")).font(.system(size: sz(17), weight: .bold)).foregroundStyle(T.txt)
+                    Text(S("on.createHint"))
                         .font(.system(size: sz(13))).foregroundStyle(T.dim)
                     ScorePicker(value: $m.pendingTarget)
                     ModePicker(value: $m.pendingMode)
-                    OptionToggle(title: "Devre arası", blurb: "Yarı yolda kısa mola",
+                    OptionToggle(title: S("com.half"), blurb: S("com.halfSub"),
                                  isOn: $m.pendingHalf)
                     MatchPlan(target: m.pendingTarget, enabled: m.pendingHalf)
-                    Button("Oda Oluştur") { m.createRoom() }.buttonStyle(PrimaryButton())
+                    Button(S("on.create")) { m.createRoom() }.buttonStyle(PrimaryButton())
                 }
                 .onChange(of: m.pendingMode) { _, v in Prefs.shared.mode = v }
                 .onChange(of: m.pendingHalf) { _, v in Prefs.shared.half = v }
 
                 card {
-                    Text("Odaya Katıl").font(.system(size: sz(17), weight: .bold)).foregroundStyle(T.txt)
-                    Text("Arkadaşının gönderdiği 4 haneli kodu gir.")
+                    Text(S("on.join")).font(.system(size: sz(17), weight: .bold)).foregroundStyle(T.txt)
+                    Text(S("on.joinHint"))
                         .font(.system(size: sz(13))).foregroundStyle(T.dim)
                     TextField("ABCD", text: $m.joinCode)
                         .textInputAutocapitalization(.characters)
@@ -230,10 +243,10 @@ struct OnlineView: View {
                             if clean != v { m.joinCode = clean }
                             if clean.count == 4 { codeFocused = false }
                         }
-                    Button("Katıl") { m.joinRoom() }.buttonStyle(PrimaryButton())
+                    Button(S("on.joinBtn")) { m.joinRoom() }.buttonStyle(PrimaryButton())
                 }
 
-                Button("← Geri") { m.go(.menu) }.buttonStyle(GhostButton())
+                Button(S("com.back")) { m.go(.menu) }.buttonStyle(GhostButton())
             }
             .padding(.horizontal, 20)
             .frame(maxWidth: Device.column)
@@ -258,7 +271,7 @@ struct LobbyView: View {
     @State private var showShare = false
 
     private var inviteText: String {
-        "Air Hockey oynayalım! Oda kodum: \(m.code)"
+        S("lob.invite", m.code)
     }
 
     var body: some View {
@@ -268,7 +281,7 @@ struct LobbyView: View {
     private var lobby: some View {
         VStack(spacing: 16) {
             Spacer(minLength: 0)
-            Text("Oda Kodu").font(.system(size: sz(24), weight: .bold)).foregroundStyle(T.txt)
+            Text(S("lob.title")).font(.system(size: sz(24), weight: .bold)).foregroundStyle(T.txt)
 
             Text(m.code)
                 .font(.system(size: sz(68), weight: .black, design: .rounded))
@@ -285,14 +298,14 @@ struct LobbyView: View {
                 Button {
                     UIPasteboard.general.string = m.code
                     Sound.shared.ui()
-                    m.flash("Kod kopyalandı: \(m.code)")
+                    m.flash(S("lob.copied", m.code))
                 } label: {
-                    Text("Kodu Kopyala").frame(maxWidth: .infinity)
+                    Text(S("lob.copy")).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PlainButton())
 
                 ShareLink(item: inviteText) {
-                    Text("Paylaş").frame(maxWidth: .infinity)
+                    Text(S("lob.share")).frame(maxWidth: .infinity)
                         .font(.system(size: sz(16), weight: .semibold))
                         .foregroundStyle(T.txt)
                         .frame(minHeight: 58)
@@ -302,10 +315,10 @@ struct LobbyView: View {
             }
 
             HStack(spacing: 12) {
-                slot(name: m.myName, sub: "Sen", color: T.me, waiting: false)
+                slot(name: m.myName, sub: S("lob.you"), color: T.me, waiting: false)
                 Text("VS").font(.system(size: sz(12), weight: .heavy)).foregroundStyle(T.dim)
-                slot(name: m.foePresent ? m.foeName : "Bekleniyor…",
-                     sub: m.foePresent ? "Hazır" : "Kodu paylaş",
+                slot(name: m.foePresent ? m.foeName : S("lob.waiting"),
+                     sub: S(m.foePresent ? "lob.ready" : "lob.shareCode"),
                      color: T.foe, waiting: !m.foePresent)
             }
 
@@ -314,19 +327,17 @@ struct LobbyView: View {
                             editable: m.isHost)
                 ModePicker(value: Binding(get: { m.gameMode }, set: { m.changeMode($0) }),
                            editable: m.isHost)
-                OptionToggle(title: "Devre arası", blurb: "Yarı yolda kısa mola",
+                OptionToggle(title: S("com.half"), blurb: S("com.halfSub"),
                              isOn: Binding(get: { m.halfAt > 0 }, set: { m.changeHalftime($0) }),
                              editable: m.isHost)
                 MatchPlan(target: m.target, enabled: m.halfAt > 0)
-                Text(m.isHost
-                     ? "Kuralları sen belirliyorsun. Rakip katılınca oyun başlar."
-                     : "Oda sahibi kuralları belirledi.")
+                Text(S(m.isHost ? "lob.hostNote" : "lob.guestNote"))
                     .font(.system(size: sz(13))).foregroundStyle(T.dim)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Spacer(minLength: 0)
-            Button("← Odadan Çık") { m.leaveLobby() }.buttonStyle(GhostButton())
+            Button(S("lob.leave")) { m.leaveLobby() }.buttonStyle(GhostButton())
         }
         .padding(.horizontal, 20)
         .frame(maxWidth: Device.column)
@@ -366,29 +377,29 @@ struct LocalView: View {
             Text(Device.sameDevice)
                 .font(.system(size: sz(24), weight: .bold)).foregroundStyle(T.txt)
 
-            (Text("\(Device.itAccCap) aranıza koyun.\n")
-             + Text("Alt yarı").foregroundColor(T.me)
-             + Text(" bir oyuncunun, ")
-             + Text("üst yarı").foregroundColor(T.foe)
-             + Text(" diğerinin."))
+            (Text(S("loc.put"))
+             + Text(S("loc.bottom")).foregroundColor(T.me)
+             + Text(S("loc.mid"))
+             + Text(S("loc.top")).foregroundColor(T.foe)
+             + Text(S("loc.tail")))
                 .font(.system(size: sz(14)))
                 .foregroundStyle(T.dim)
                 .multilineTextAlignment(.center)
 
             ScorePicker(value: $m.localTarget)
             ModePicker(value: $m.localMode)
-            OptionToggle(title: "Devre arası", blurb: "Yarı yolda \(Device.itAcc) çevirin",
+            OptionToggle(title: S("com.half"), blurb: S("loc.halfSub"),
                          isOn: $m.localHalf)
             MatchPlan(target: m.localTarget, enabled: m.localHalf)
             if m.localHalf {
-                Text("Devrede \(Device.itAcc) 180° çevirirsiniz — herkes bir yarıyı da diğer taraftan oynar.")
+                Text(S("loc.halfHint"))
                     .font(.system(size: sz(13)))
                     .foregroundStyle(T.dim)
                     .multilineTextAlignment(.center)
             }
-            Button("Başlat") { m.startLocal() }.buttonStyle(PrimaryButton())
+            Button(S("loc.start")) { m.startLocal() }.buttonStyle(PrimaryButton())
             Spacer(minLength: 0)
-            Button("← Geri") { m.go(.menu) }.buttonStyle(GhostButton())
+            Button(S("com.back")) { m.go(.menu) }.buttonStyle(GhostButton())
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -404,14 +415,24 @@ struct LocalView: View {
 struct SettingsView: View {
     @ObservedObject var m: GameModel
     @ObservedObject private var prefs = Prefs.shared
+    @ObservedObject private var lang = Lang.shared
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    card("Zemin", "Çocuklar için açık ve sade zeminler daha rahat görünür.") {
-                        OptionGrid(columns: 2, items: Palettes.all.map { ($0.key, $0.name) },
+                    card(S("lang.title"), S("lang.hint")) {
+                        OptionGrid(columns: 2,
+                                   items: Lang.codes.map { ($0, Lang.names[$0] ?? $0) },
+                                   selection: lang.code,
+                                   swatch: { _ in AnyView(EmptyView()) },
+                                   pick: { lang.set($0) })
+                    }
+
+                    card(S("set.floor"), S("set.floorHint")) {
+                        OptionGrid(columns: 2,
+                                   items: Palettes.all.map { ($0.key, S("theme." + $0.key)) },
                                    selection: prefs.theme,
                                    swatch: { key in AnyView(
                                        RoundedRectangle(cornerRadius: 5, style: .continuous)
@@ -422,15 +443,16 @@ struct SettingsView: View {
                                    pick: { prefs.theme = $0 })
                     }
 
-                    card("Top Rengi", "Tema, sahaya uygun olanı seçer.") {
-                        OptionGrid(columns: 3, items: PuckSkins.all.map { ($0.key, $0.name) },
+                    card(S("set.puck"), S("set.puckHint")) {
+                        OptionGrid(columns: 3,
+                                   items: PuckSkins.all.map { ($0.key, S("puck." + $0.key)) },
                                    selection: prefs.puck,
                                    swatch: { key in AnyView(PuckDot(key: key)) },
                                    pick: { prefs.puck = $0 })
                     }
 
-                    card("Sunucu", "Oyunun çalıştığı adres. Aynı Wi-Fi'da test için http://192.168.1.20:8080") {
-                        TextField("https://sunucu-adresin", text: $m.serverField)
+                    card(S("set.server"), S("set.serverHint")) {
+                        TextField(S("set.serverPh"), text: $m.serverField)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .keyboardType(.URL)
@@ -439,7 +461,7 @@ struct SettingsView: View {
                             .background(T.card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(T.line))
 
-                        Toggle("Ses ve titreşim", isOn: Binding(
+                        Toggle(S("set.sound"), isOn: Binding(
                             get: { Sound.shared.enabled },
                             set: { Sound.shared.enabled = $0 }))
                             .font(.system(size: sz(15), weight: .semibold))
@@ -453,14 +475,14 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(Backdrop())
-            .navigationTitle("Ayarlar")
+            .navigationTitle(S("set.title"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Kaydet") { m.saveServer(); dismiss() }
+                    Button(S("set.save")) { m.saveServer(); dismiss() }
                 }
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Kapat") { dismiss() }
+                    Button(S("set.close")) { dismiss() }
                 }
             }
         }
@@ -553,5 +575,67 @@ struct CenteredScroll<C: View>: View {
             }
             .scrollBounceBehavior(.basedOnSize)
         }
+    }
+}
+
+// MARK: - first launch: language
+
+/// Shown once, on the very first launch, with English already ticked. The
+/// choice is only written down when the player taps through, so tapping a
+/// language just previews it. After that this never appears again — Settings
+/// carries the same picker.
+struct LanguageGate: View {
+    @ObservedObject private var lang = Lang.shared
+    /// What is ticked right now, before the player commits.
+    @State private var picked = Lang.shared.code
+    let done: () -> Void
+
+    var body: some View {
+        ZStack {
+            Backdrop()
+            VStack(spacing: 18) {
+                Spacer()
+                Image(systemName: "globe")
+                    .font(.system(size: sz(44), weight: .regular))
+                    .foregroundStyle(T.me)
+                Text(S("lang.pick"))
+                    .font(.system(size: sz(28), weight: .black, design: .rounded))
+                    .foregroundStyle(T.txt)
+                Text(S("lang.sub"))
+                    .font(.system(size: sz(14)))
+                    .foregroundStyle(T.dim)
+                    .multilineTextAlignment(.center)
+
+                HStack(spacing: 8) {
+                    ForEach(Lang.codes, id: \.self) { c in
+                        Button {
+                            Sound.shared.ui()
+                            picked = c
+                            lang.set(c, remember: false)   // preview only
+                        } label: {
+                            Text(Lang.names[c] ?? c)
+                                .font(.system(size: sz(16), weight: .heavy))
+                                .frame(maxWidth: .infinity, minHeight: 54)
+                        }
+                        .buttonStyle(ChipStyle(on: c == picked))
+                    }
+                }
+                .padding(.top, 4)
+
+                Button(S("lang.go")) {
+                    Sound.shared.ui()
+                    lang.set(picked)                       // now it is remembered
+                    done()
+                }
+                .buttonStyle(PrimaryButton())
+
+                Spacer()
+            }
+            .padding(.horizontal, 24)
+            .frame(maxWidth: Device.column)
+            .frame(maxWidth: .infinity)
+        }
+        .preferredColorScheme(PAL.glow ? .dark : .light)
+        .interactiveDismissDisabled()
     }
 }

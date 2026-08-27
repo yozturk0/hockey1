@@ -6,6 +6,9 @@
 const { Game, ST, CONST, halftimeFor, countdownDigit, MODES, FX } = window.AHEngine;
 const { W, H, PUCK_R, PAD_R, GX0, GX1, PUCK_MAX, PAD_MAX_SPEED } = CONST;
 
+const I18n = window.AHI18n;
+const t = (k, v) => I18n.t(k, v);
+
 const $ = (id) => document.getElementById(id);
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -23,15 +26,15 @@ const MODE_KEYS = [MODES.CLASSIC, MODES.LUCKY];
    motion trail when nobody has struck the puck yet. "tema" keeps whatever the
    chosen rink was designed around. */
 const PUCK_COLORS = {
-  tema:    { name: 'Tema',    g: null },
-  siyah:   { name: 'Siyah',   g: ['#6e6e6e', '#232323', '#080808'], rgb: '35,35,35' },
-  kirmizi: { name: 'Kırmızı', g: ['#ffa898', '#e23b26', '#7f1a0e'], rgb: '226,59,38' },
-  turuncu: { name: 'Turuncu', g: ['#ffd39a', '#f0871e', '#8f4c08'], rgb: '240,135,30' },
-  sari:    { name: 'Sarı',    g: ['#fff6d8', '#ffd166', '#b8801a'], rgb: '255,209,102' },
-  yesil:   { name: 'Yeşil',   g: ['#a8f0c8', '#20a05e', '#0c4d2c'], rgb: '32,160,94' },
-  mavi:    { name: 'Mavi',    g: ['#b6dcff', '#1f7ae0', '#0b3c78'], rgb: '31,122,224' },
-  mor:     { name: 'Mor',     g: ['#dcbcff', '#8b3ee0', '#431775'], rgb: '139,62,224' },
-  beyaz:   { name: 'Beyaz',   g: ['#ffffff', '#eef1f6', '#9aa4b2'], rgb: '238,241,246' },
+  tema:    { g: null },
+  siyah:   { g: ['#6e6e6e', '#232323', '#080808'], rgb: '35,35,35' },
+  kirmizi: { g: ['#ffa898', '#e23b26', '#7f1a0e'], rgb: '226,59,38' },
+  turuncu: { g: ['#ffd39a', '#f0871e', '#8f4c08'], rgb: '240,135,30' },
+  sari:    { g: ['#fff6d8', '#ffd166', '#b8801a'], rgb: '255,209,102' },
+  yesil:   { g: ['#a8f0c8', '#20a05e', '#0c4d2c'], rgb: '32,160,94' },
+  mavi:    { g: ['#b6dcff', '#1f7ae0', '#0b3c78'], rgb: '31,122,224' },
+  mor:     { g: ['#dcbcff', '#8b3ee0', '#431775'], rgb: '139,62,224' },
+  beyaz:   { g: ['#ffffff', '#eef1f6', '#9aa4b2'], rgb: '238,241,246' },
 };
 const PUCK_KEYS = Object.keys(PUCK_COLORS);
 
@@ -152,8 +155,8 @@ const App = {
   gameMode: MODES.CLASSIC,
   halfAt: 0,           // goal count that triggers the break, 0 = no break
   halfReady: false,    // online break: I have tapped "ready"
-  myName: 'Oyuncu',
-  foeName: 'Rakip',
+  myName: t('menu.namePh'),
+  foeName: t('game.foe'),
   snap: null,
   snapAt: 0,
   ping: null,
@@ -196,11 +199,11 @@ function show(id) {
 
 let toastTimer = null;
 function toast(msg, ms = 2600) {
-  const t = $('toast');
-  t.textContent = msg;
-  t.classList.remove('hidden');
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.remove('hidden');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.add('hidden'), ms);
+  toastTimer = setTimeout(() => el.classList.add('hidden'), ms);
 }
 
 /* ============================ networking ============================ */
@@ -225,7 +228,7 @@ const Net = {
 
   connect() {
     if (this.ws && (this.ws.readyState === 0 || this.ws.readyState === 1)) return;
-    setConn('wait', 'Bağlanıyor…');
+    setConn('wait', 'net.connecting');
     let ws;
     try { ws = new WebSocket(this.url()); } catch (_) { return this.scheduleRetry(); }
     this.ws = ws;
@@ -234,11 +237,11 @@ const Net = {
       this.ready = true;
       this.retry = 0;
       this.lastRx = Date.now();
-      setConn('ok', 'Sunucuya bağlı');
+      setConn('ok', 'net.ok');
       clearInterval(this.pingTimer);
       this.pingTimer = setInterval(() => {
         if (Date.now() - this.lastRx > 6000) {
-          setConn('bad', 'Bağlantı koptu');
+          setConn('bad', 'net.lost');
           this.reconnect();
           return;
         }
@@ -260,8 +263,8 @@ const Net = {
     ws.onclose = () => {
       this.ready = false;
       clearInterval(this.pingTimer);
-      setConn('bad', 'Bağlantı koptu');
-      if (App.mode === 'online') toast('Bağlantı koptu, yeniden deneniyor…');
+      setConn('bad', 'net.lost');
+      if (App.mode === 'online') toast(t('net.lostRetry'));
       this.scheduleRetry();
     };
 
@@ -300,7 +303,10 @@ const Net = {
   },
 };
 
-function setConn(cls, txt) {
+let connState = { cls: 'wait', key: 'net.connecting' };
+function setConn(cls, key) {
+  connState = { cls, key };
+  const txt = t(key);
   // The reconnect buttons double as the connection lamp, so they follow the
   // footer dot rather than carrying a second, possibly disagreeing state.
   reconnectButtons().forEach((b) => {
@@ -308,10 +314,10 @@ function setConn(cls, txt) {
     b.classList.toggle('wait', cls === 'wait');
     b.title = txt;
   });
-  const d = $('conn-dot'), t = $('conn-txt');
+  const d = $('conn-dot'), lbl = $('conn-txt');
   if (!d) return;
   d.className = 'dot' + (cls === 'ok' ? ' ok' : cls === 'bad' ? ' bad' : '');
-  t.textContent = txt;
+  lbl.textContent = txt;
 }
 
 function reconnectButtons() {
@@ -331,7 +337,7 @@ function reconnectNow() {
     setTimeout(() => b.classList.remove('busy'), 3000);
   });
   Net.reconnect();
-  toast('Sunucuya yeniden bağlanılıyor…');
+  toast(t('net.again'));
 }
 
 function onMessage(m) {
@@ -374,10 +380,10 @@ function onMessage(m) {
       const theirs = App.side === 'a' ? m.names.b : m.names.a;
       const theirsHere = App.side === 'a' ? m.b : m.a;
       App.myName = mine;
-      App.foeName = theirsHere ? theirs : 'Rakip';
+      App.foeName = theirsHere ? theirs : t('game.foe');
       $('p-a').textContent = mine;
-      $('p-b').textContent = theirsHere ? theirs : 'Bekleniyor…';
-      $('p-b-sub').textContent = theirsHere ? 'Hazır' : 'Kodu paylaş';
+      $('p-b').textContent = theirsHere ? theirs : t('lob.waiting');
+      $('p-b-sub').textContent = theirsHere ? t('lob.ready') : t('lob.shareCode');
       $('slot-b').classList.toggle('waiting', !theirsHere);
       $('hud-me').textContent = mine;
       $('hud-foe').textContent = App.foeName;
@@ -386,8 +392,8 @@ function onMessage(m) {
     }
 
     case 'peer':
-      if (m.on) { Snd.join(); toast('Rakip bağlandı!'); }
-      else { toast('Rakip ayrıldı — bekleniyor…', 4000); }
+      if (m.on) { Snd.join(); toast(t('net.peerIn')); }
+      else { toast(t('net.peerOut'), 4000); }
       break;
 
     case 'hr':
@@ -397,7 +403,9 @@ function onMessage(m) {
       break;
 
     case 'err':
-      toast(m.m, 3400);
+      // The server sends a key so the message can be shown in the player's
+      // own language; `m.m` is only the fallback for an older server.
+      toast(m.k ? t('err.' + m.k) : m.m, 3400);
       if (current === 's-lobby' || current === 's-game') {
         Net.wantRoom = null;
         show('s-online');
@@ -440,7 +448,7 @@ function handleSnapshot(s) {
       const mine = ey < H / 2;               // the puck went into THEIR net
       Snd.goal(mine);
       R.shake = 1;
-      centerMsg(mine ? 'GOL!' : 'Rakip Attı', 'goal', 1200);
+      centerMsg(mine ? t('game.goal') : t('game.foeGoal'), 'goal', 1200);
     }
     else if (type === 3) {
       Snd.ui();
@@ -453,9 +461,9 @@ function handleSnapshot(s) {
     paintCountdown(s.cd);
   } else if (App.lastState === ST.COUNTDOWN && s.st === ST.PLAYING) {
     App.lastCd = -1;
-    centerMsg('BAŞLA!', '', 550);
+    centerMsg(t('game.go'), '', 550);
   } else if (s.st === ST.PAUSED) {
-    centerMsg('Rakip bekleniyor…', 'wait', 0);
+    centerMsg(t('game.waitFoe'), 'wait', 0);
   } else if (s.st === ST.PLAYING) {
     hideMsgIfIdle();
   }
@@ -474,12 +482,12 @@ function handleSnapshot(s) {
 /* What a lucky-mode twist should say. `mine` is true when the affected mallet
    is the bottom one; in the same-device mode that is Oyuncu 1, not "you". */
 function luckyText(code, mine, local) {
-  const who = local ? (mine ? 'OYUNCU 1' : 'OYUNCU 2') : (mine ? 'SOPAN' : 'RAKİP');
+  const who = local ? t(mine ? 'fx.p1' : 'fx.p2') : t(mine ? 'fx.mine' : 'fx.theirs');
   switch (code) {
-    case FX.GROW:   return who + ' BÜYÜDÜ';
-    case FX.SHRINK: return who + ' KÜÇÜLDÜ';
-    case FX.FAST:   return 'BUZ KAYGAN';
-    default:        return 'BUZ AĞIR';
+    case FX.GROW:   return who + t('fx.grow');
+    case FX.SHRINK: return who + t('fx.shrink');
+    case FX.FAST:   return t('fx.fast');
+    default:        return t('fx.slow');
   }
 }
 
@@ -532,10 +540,8 @@ function openHalftime(score, turnPhone) {
   $('half-bot').classList.toggle('hidden', !turnPhone);
   $('half-icon').classList.toggle('hidden', !turnPhone);
   $('half-title').classList.toggle('hidden', turnPhone);
-  $('half-note').innerHTML = turnPhone
-    ? 'Alt taraf yukarı, üst taraf aşağı.<br>Böylece herkes ekranın iki yanını da kullanır.'
-    : 'İkiniz de hazır deyince ikinci yarı başlar.';
-  $('b-half').textContent = turnPhone ? 'Çevirdik, Devam' : 'Hazırım';
+  $('half-note').innerHTML = t(turnPhone ? 'half.noteTurn' : 'half.noteWait');
+  $('b-half').textContent = t(turnPhone ? 'half.btnTurn' : 'half.btnReady');
   $('b-half').disabled = false;
   $('half-wait').classList.add('hidden');
   $('half').classList.remove('hidden');
@@ -577,9 +583,9 @@ $('b-half').addEventListener('click', () => {
 /* "ŞANSLI · 4 DEVRE · 7 GOL" — always visible during a match. */
 function setHudTarget(target, half, mode) {
   const bits = [];
-  if (mode === MODES.LUCKY) bits.push('ŞANSLI');
-  if (half) bits.push(`<b>${half}</b> DEVRE`);
-  bits.push(`${target} GOL`);
+  if (mode === MODES.LUCKY) bits.push(t('hud.lucky'));
+  if (half) bits.push(`<b>${half}</b> ${t('hud.half')}`);
+  bits.push(`${target} ${t('hud.goals')}`);
   $('hud-target').innerHTML = bits.join(' · ');
 }
 
@@ -601,21 +607,19 @@ function updatePlan(id, target, halfOn) {
 
 function showOver(win, me, foe) {
   Snd.over(win);
-  const t = $('ovl-title');
-  t.textContent = win ? 'Kazandın!' : 'Kaybettin';
-  t.className = 'ovl-title ' + (win ? 'win' : 'lose');
+  const el = $('ovl-title');
+  el.textContent = t(win ? 'over.win' : 'over.lose');
+  el.className = 'ovl-title ' + (win ? 'win' : 'lose');
   $('ovl-score').textContent = `${me} – ${foe}`;
-  $('ovl-sub').textContent = App.mode === 'online'
-    ? 'Tekrar oyna dersen maç yeniden başlar.'
-    : '';
+  $('ovl-sub').textContent = App.mode === 'online' ? t('over.sub') : '';
   $('ovl').classList.remove('hidden');
 }
 function showOverLocal(g) {
   const win = g.winner === 'a';
   Snd.over(true);
-  const t = $('ovl-title');
-  t.textContent = win ? 'Oyuncu 1 Kazandı!' : 'Oyuncu 2 Kazandı!';
-  t.className = 'ovl-title ' + (win ? 'win' : 'lose');
+  const el = $('ovl-title');
+  el.textContent = t(win ? 'over.p1Win' : 'over.p2Win');
+  el.className = 'ovl-title ' + (win ? 'win' : 'lose');
   $('ovl-score').textContent = `${g.scoreA} – ${g.scoreB}`;
   $('ovl-sub').textContent = '';
   $('ovl').classList.remove('hidden');
@@ -1004,7 +1008,7 @@ function stepLocal(dt) {
       const bottomScored = ey < H / 2;
       Snd.goal(true);
       R.shake = 1;
-      centerMsg(bottomScored ? 'OYUNCU 1' : 'OYUNCU 2', 'goal', 1200);
+      centerMsg(t(bottomScored ? 'fx.p1' : 'fx.p2'), 'goal', 1200);
     } else if (type === 3) {
       Snd.ui();
       centerMsg(luckyText(inten, ey >= H / 2, true), 'lucky', 1400);
@@ -1018,7 +1022,7 @@ function stepLocal(dt) {
     paintCountdown(g.countdown);
   } else if (prevState === ST.COUNTDOWN && g.state === ST.PLAYING) {
     App.lastCd = -1;
-    centerMsg('BAŞLA!', '', 550);
+    centerMsg(t('game.go'), '', 550);
   }
 
   if (g.state === ST.OVER && prevState !== ST.OVER) showOverLocal(g);
@@ -1203,7 +1207,8 @@ function syncLobbyRules() {
     const b = document.createElement('button');
     b.className = 'chip chip-puck';
     b.dataset.v = key;
-    b.textContent = c.name;
+    b.setAttribute('data-i18n', 'puck.' + key);
+    b.textContent = t('puck.' + key);
     // "Tema" has no fixed colour of its own; show the rink's current puck.
     b.style.setProperty('--swatch',
       c.g ? `linear-gradient(135deg,${c.g[0]},${c.g[2]})` : 'conic-gradient(#e23b26,#ffd166,#1f7ae0,#232323,#e23b26)');
@@ -1212,6 +1217,52 @@ function syncLobbyRules() {
 }());
 
 let repaintPuckChips = null;
+
+/* ---- language ---- */
+
+/* A name the player typed is theirs and never gets translated; the untouched
+   default placeholder does follow the language. */
+let namedSelf = false;
+
+const paintLangChips = () => {
+  document.querySelectorAll('#pick-lang .chip, #pick-lang-first .chip').forEach((c) => {
+    c.classList.toggle('is-on', c.dataset.v === I18n.current);
+  });
+};
+
+document.querySelectorAll('#pick-lang .chip').forEach((c) => {
+  c.addEventListener('click', () => { Snd.ui(); I18n.set(c.dataset.v); });
+});
+
+/* Everything the dictionary cannot reach on its own: text this file writes
+   into the page at runtime. */
+document.addEventListener('langchange', () => {
+  paintLangChips();
+  setConn(connState.cls, connState.key);
+  if (!namedSelf) {
+    App.myName = t('menu.namePh');
+    $('i-name').value = '';
+  }
+  if (App.mode !== 'online' || !App.peerOn) App.foeName = t('game.foe');
+
+  if (App.mode === 'local') {
+    $('hud-me').textContent = t('game.p1');
+    $('hud-foe').textContent = t('game.p2');
+  } else {
+    $('hud-me').textContent = App.myName;
+    $('hud-foe').textContent = App.foeName;
+    if (current === 's-lobby') {
+      if (!App.peerOn) {
+        $('p-b').textContent = t('lob.waiting');
+        $('p-b-sub').textContent = t('lob.shareCode');
+      } else {
+        $('p-b-sub').textContent = t('lob.ready');
+      }
+    }
+  }
+  setHudTarget(App.target, App.halfAt, App.gameMode);
+});
+paintLangChips();
 
 wireOptions('pick-theme', () => Cfg.theme, (v) => {
   applyTheme(v);
@@ -1274,8 +1325,8 @@ function startLocal() {
   App.halfAt = App.game.halfAt;
   App.game.startCountdown();
   setFlip(false);
-  $('hud-me').textContent = 'Oyuncu 1';
-  $('hud-foe').textContent = 'Oyuncu 2';
+  $('hud-me').textContent = t('game.p1');
+  $('hud-foe').textContent = t('game.p2');
   setHudTarget(localTarget, App.halfAt, localMode);
   $('hud-ping').parentElement.style.display = 'none';
   enterGame();
@@ -1308,12 +1359,14 @@ document.querySelectorAll('[data-back]').forEach((b) => {
 });
 
 $('i-name').addEventListener('input', (e) => {
-  App.myName = e.target.value.trim().slice(0, 14) || 'Oyuncu';
+  const typed = e.target.value.trim().slice(0, 14);
+  namedSelf = !!typed;
+  App.myName = typed || t('menu.namePh');
   try { localStorage.setItem('ah_name', App.myName); } catch (_) {}
 });
 try {
   const saved = localStorage.getItem('ah_name');
-  if (saved) { $('i-name').value = saved; App.myName = saved; }
+  if (saved) { $('i-name').value = saved; App.myName = saved; namedSelf = true; }
 } catch (_) {}
 
 $('b-settings').addEventListener('click', () => { Snd.ui(); show('s-set'); });
@@ -1330,7 +1383,7 @@ $('b-local-start').addEventListener('click', () => { Snd.ui(); startLocal(); });
 
 $('b-create').addEventListener('click', () => {
   Snd.ui();
-  if (!Net.ready) { toast('Sunucuya bağlanılıyor, bir saniye…'); Net.connect(); return; }
+  if (!Net.ready) { toast(t('net.wait')); Net.connect(); return; }
   App.lastState = -1;
   Net.send({
     t: 'create', target: onlineTarget, mode: onlineMode, half: onlineHalf,
@@ -1346,8 +1399,8 @@ $('i-code').addEventListener('input', (e) => {
 $('b-join').addEventListener('click', () => {
   Snd.ui();
   const code = $('i-code').value.trim().toUpperCase();
-  if (code.length !== 4) return toast('4 haneli oda kodunu gir.');
-  if (!Net.ready) { toast('Sunucuya bağlanılıyor, bir saniye…'); Net.connect(); return; }
+  if (code.length !== 4) return toast(t('net.badCode'));
+  if (!Net.ready) { toast(t('net.wait')); Net.connect(); return; }
   App.lastState = -1;
   Net.wantRoom = code;
   Net.send({ t: 'join', code, name: App.myName });
@@ -1357,21 +1410,21 @@ $('b-copy').addEventListener('click', async () => {
   Snd.ui();
   try {
     await navigator.clipboard.writeText(App.code);
-    toast('Kod kopyalandı: ' + App.code);
+    toast(t('net.copied') + App.code);
   } catch (_) {
-    toast('Kod: ' + App.code);
+    toast(t('net.code') + App.code);
   }
 });
 
 $('b-share').addEventListener('click', async () => {
   Snd.ui();
   const url = `${location.origin}${location.pathname}?oda=${App.code}`;
-  const text = `Air Hockey oynayalım! Oda kodum: ${App.code}\nLinke dokun, direkt odaya gir:\n${url}`;
+  const text = t('net.invite', { code: App.code, url });
   if (navigator.share) {
     try { await navigator.share({ title: 'Air Hockey', text }); return; } catch (_) { return; }
   }
-  try { await navigator.clipboard.writeText(text); toast('Davet kopyalandı'); }
-  catch (_) { toast('Kod: ' + App.code); }
+  try { await navigator.clipboard.writeText(text); toast(t('net.inviteCopied')); }
+  catch (_) { toast(t('net.code') + App.code); }
 });
 
 $('b-lobby-leave').addEventListener('click', () => {
@@ -1398,6 +1451,29 @@ $('b-again').addEventListener('click', () => {
   }
 });
 
+/* The very first launch asks which language to play in — English is already
+   ticked. The answer is stored, so this never appears again; Settings is where
+   it changes from then on. */
+(function languageGate() {
+  const gate = $('langgate');
+  if (I18n.chosen()) return;
+  let picked = 'en';
+  I18n.set(picked, false);
+  gate.classList.remove('hidden');
+  $('pick-lang-first').querySelectorAll('.chip').forEach((c) => {
+    c.addEventListener('click', () => {
+      Snd.ui();
+      picked = c.dataset.v;
+      I18n.set(picked, false);   // preview it, but do not answer for them yet
+    });
+  });
+  $('b-lang-go').addEventListener('click', () => {
+    Snd.ui();
+    I18n.set(picked);            // now it is remembered
+    gate.classList.add('hidden');
+  });
+}());
+
 /* Deep link: ?oda=ABCD jumps straight into a room. */
 (function deepLink() {
   const code = new URLSearchParams(location.search).get('oda');
@@ -1417,6 +1493,7 @@ $('b-again').addEventListener('click', () => {
 
 reconnectButtons().forEach((b) => b.addEventListener('click', reconnectNow));
 
+I18n.apply();
 resize();
 Net.connect();
 }());
