@@ -11,9 +11,14 @@
     "start": "node server/server.js",
     "dev": "node server/server.js",
     "test": "node test/engine.test.js && node test/view.test.js",
-    "test:server": "node test/server.test.js"
+    "test:server": "node test/server.test.js",
+    "build": "node portal/build.js"
   },
   "dependencies": {
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "clean-css": "^5.3.3",
+    "terser": "^5.51.0"
   }
 }
