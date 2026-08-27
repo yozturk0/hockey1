@@ -266,6 +266,7 @@ const Net = {
         this.send({ t: 'p', c: Date.now() });
       }, 2000);
       this.send({ t: 'p', c: Date.now() });
+      runPending();
       if (this.wantRoom) {
         this.send({ t: 'join', code: this.wantRoom, name: App.myName });
       }
@@ -1520,7 +1521,12 @@ window.addEventListener('pointerdown', firstGesture);
 window.addEventListener('keydown', firstGesture);
 
 document.querySelectorAll('[data-back]').forEach((b) => {
-  b.addEventListener('click', () => { Snd.ui(); show(b.dataset.back); });
+  b.addEventListener('click', () => {
+    Snd.ui();
+    pending = null;
+    hideWaking();
+    show(b.dataset.back);
+  });
 });
 
 $('i-name').addEventListener('input', (e) => {
@@ -1541,21 +1547,67 @@ $('b-online').addEventListener('click', () => {
   $('hud-ping').parentElement.style.display = '';
   document.body.classList.add('net-used');
   show('s-online');
+  hideWaking();
   Net.connect();
+  if (!Net.ready) showWaking(null);
 });
 
 $('b-play').addEventListener('click', () => { Snd.ui(); startSolo(); });
 $('b-local').addEventListener('click', () => { Snd.ui(); show('s-local'); });
 $('b-local-start').addEventListener('click', () => { Snd.ui(); startLocal(); });
 
+/* A free-tier instance that has gone to sleep takes about half a minute to
+   answer, and the old behaviour was a toast saying "wait" and nothing else —
+   which is a player staring at a button that does not work. Now the request is
+   remembered and fires itself the moment the socket opens, the wait is named
+   rather than hidden, and there is a real game one tap away in the meantime. */
+let pending = null;
+
+function runPending() {
+  const job = pending;
+  pending = null;
+  hideWaking();
+  if (job) job();
+}
+
+function queue(job) {
+  App.lastState = -1;
+  if (Net.ready) { hideWaking(); job(); return; }
+  pending = job;
+  showWaking(t('net.queued'));
+  Net.connect();
+}
+
+let wakingTimer = null;
+function showWaking(msg) {
+  clearTimeout(wakingTimer);
+  const paint = () => {
+    $('waking-txt').textContent = msg || t('net.waking');
+    $('waking').classList.remove('hidden');
+  };
+  // A server that is merely awake answers in well under a second; announcing a
+  // wait that is not happening would be its own kind of wrong.
+  if (msg) paint(); else wakingTimer = setTimeout(paint, 1200);
+}
+
+function hideWaking() {
+  clearTimeout(wakingTimer);
+  $('waking').classList.add('hidden');
+}
+
+$('b-meanwhile').addEventListener('click', () => {
+  Snd.ui();
+  pending = null;
+  hideWaking();
+  startSolo();
+});
+
 $('b-create').addEventListener('click', () => {
   Snd.ui();
-  if (!Net.ready) { toast(t('net.wait')); Net.connect(); return; }
-  App.lastState = -1;
-  Net.send({
+  queue(() => Net.send({
     t: 'create', target: onlineTarget, mode: onlineMode, half: onlineHalf,
     name: App.myName,
-  });
+  }));
 });
 
 $('i-code').addEventListener('input', (e) => {
@@ -1567,10 +1619,8 @@ $('b-join').addEventListener('click', () => {
   Snd.ui();
   const code = $('i-code').value.trim().toUpperCase();
   if (code.length !== 4) return toast(t('net.badCode'));
-  if (!Net.ready) { toast(t('net.wait')); Net.connect(); return; }
-  App.lastState = -1;
   Net.wantRoom = code;
-  Net.send({ t: 'join', code, name: App.myName });
+  queue(() => Net.send({ t: 'join', code, name: App.myName }));
 });
 
 $('b-copy').addEventListener('click', async () => {

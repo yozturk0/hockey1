@@ -52,6 +52,14 @@
   <div class="stack">
     <h2 class="title" data-i18n="on.title">Play Online</h2>
 
+    <!-- A free-tier server sleeps, and the player who wakes it waits about
+         half a minute. Saying so is better than a spinner, and offering a
+         game to play in the meantime is better than either. -->
+    <div class="waking hidden" id="waking">
+      <p class="hint" id="waking-txt" data-i18n="net.waking">Waking the server up — the first connection can take half a minute.</p>
+      <button class="btn btn-sm" id="b-meanwhile" data-i18n="net.meanwhile">Play the computer while you wait</button>
+    </div>
+
     <label class="namefield">
       <span data-i18n="menu.name">Your name</span>
       <input id="i-name" type="text" maxlength="14" data-i18n-ph="menu.namePh" placeholder="Player" autocomplete="off" autocapitalize="words" spellcheck="false">

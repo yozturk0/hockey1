@@ -3,6 +3,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 const { WebSocketServer } = require('ws');
 const { Game, ST, CONST, MODES } = require('../web/engine.js');
 
@@ -57,6 +58,14 @@ function readOpts(m) {
     mode: m.mode === MODES.LUCKY ? MODES.LUCKY : MODES.CLASSIC,
     halftime: !!m.half,
   };
+}
+
+/* How many seats are filled across every room — the one number that says
+   whether anybody is actually playing right now. */
+function playerCount() {
+  let n = 0;
+  for (const room of rooms.values()) n += occupancy(room);
+  return n;
 }
 
 function occupancy(room) {
@@ -131,6 +140,9 @@ function leaveRoom(ws) {
 
 /* ---------------- static site ---------------- */
 
+/* Which of the served types are worth compressing at all. */
+const TEXTUAL = new Set(['.html', '.js', '.css', '.json', '.svg', '.webmanifest']);
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
@@ -146,9 +158,22 @@ const httpServer = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   let p = decodeURIComponent(url.pathname);
 
-  if (p === '/health') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, rooms: rooms.size, up: Math.floor(process.uptime()) }));
+  /* Two ways to say the same thing. `/health` is what the platform's own
+     checker calls; `/ping` is the one to point an external uptime cron at,
+     because a free-tier instance sleeps after fifteen idle minutes and the
+     player who wakes it waits half a minute for a rink. Keeping the instance
+     warm is cheaper than losing that player. */
+  if (p === '/health' || p === '/ping') {
+    res.writeHead(200, {
+      'content-type': 'application/json',
+      'cache-control': 'no-store',
+    });
+    return res.end(JSON.stringify({
+      ok: true,
+      rooms: rooms.size,
+      players: playerCount(),
+      up: Math.floor(process.uptime()),
+    }));
   }
 
   if (p === '/') p = '/index.html';
@@ -167,11 +192,25 @@ const httpServer = http.createServer((req, res) => {
     // a stale app.js against a fresh engine.js is a very confusing bug.
     const ext = path.extname(file);
     const versioned = ext === '.html' || ext === '.js' || ext === '.css' || ext === '.webmanifest';
-    res.writeHead(200, {
+    const head = {
       'content-type': MIME[ext] || 'application/octet-stream',
       'cache-control': versioned ? 'no-cache' : 'public, max-age=86400',
-    });
-    res.end(data);
+      vary: 'accept-encoding',
+    };
+
+    // Text goes out compressed. Uncompressed, the whole site is about 125 KB;
+    // squeezed it is nearer 32, and on a phone on a bad connection that is the
+    // difference between the game appearing and the player leaving. Images are
+    // already compressed and only get bigger for the trouble.
+    const enc = String(req.headers['accept-encoding'] || '');
+    const worth = TEXTUAL.has(ext) && data.length > 512;
+    let out = data, algo = null;
+    if (worth && /\bbr\b/.test(enc)) { algo = 'br'; out = zlib.brotliCompressSync(data); }
+    else if (worth && /\bgzip\b/.test(enc)) { algo = 'gzip'; out = zlib.gzipSync(data, { level: 9 }); }
+    if (algo) head['content-encoding'] = algo;
+
+    res.writeHead(200, head);
+    res.end(out);
   });
 });
 
