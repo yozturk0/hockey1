@@ -157,6 +157,7 @@ const STR = {
     'net.code':         'Kod: ',
     'net.inviteCopied': 'Davet kopyalandı',
     'net.invite':       'Air Hockey oynayalım! Oda kodum: {code}\nLinke dokun, direkt odaya gir:\n{url}',
+    'net.inviteCode':   'Air Hockey oynayalım! Oda kodum: {code}',
 
     /* ---- server-sent errors ---- */
     'game.bot':         'Bilgisayar',
@@ -312,6 +313,7 @@ const STR = {
     'net.code':         'Code: ',
     'net.inviteCopied': 'Invite copied',
     'net.invite':       "Let's play Air Hockey! My room code is: {code}\nTap the link to jump right in:\n{url}",
+    'net.inviteCode':   "Let's play Air Hockey! My room code is: {code}",
 
     'game.bot':         'Computer',
     'skin.locked':      'Locked colour',

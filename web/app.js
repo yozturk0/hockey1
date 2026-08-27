@@ -874,7 +874,10 @@ function pointerPos(e) {
 function onDown(e) {
   if (current !== 's-game') return;
   if (!$('half').classList.contains('hidden')) return;   // half-time break
-  cv.setPointerCapture && cv.setPointerCapture(e.pointerId);
+  // Capture keeps a finger that slides off the canvas attached to its mallet.
+  // It is a convenience, not a requirement, and it throws on browsers that no
+  // longer consider the pointer active — which must not cost us the touch.
+  try { cv.setPointerCapture && cv.setPointerCapture(e.pointerId); } catch (_) {}
   const p = pointerPos(e);
   // Which half was touched decides which paddle this finger owns.
   const who = p.y >= H / 2 ? 'me' : 'foe';
@@ -1635,8 +1638,13 @@ $('b-copy').addEventListener('click', async () => {
 
 $('b-share').addEventListener('click', async () => {
   Snd.ui();
-  const url = `${location.origin}${location.pathname}?oda=${App.code}`;
-  const text = t('net.invite', { code: App.code, url });
+  // Inside a portal the page's own address belongs to the portal, not to the
+  // game, so a link built from it would send a friend to the wrong place — and
+  // handing out links is something both portals have rules about anyway. There
+  // the invite is the code and nothing else; the friend types it in.
+  const text = Portal.target === 'none'
+    ? t('net.invite', { code: App.code, url: `${location.origin}${location.pathname}?oda=${App.code}` })
+    : t('net.inviteCode', { code: App.code });
   if (navigator.share) {
     try { await navigator.share({ title: 'Air Hockey', text }); return; } catch (_) { return; }
   }

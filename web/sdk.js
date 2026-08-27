@@ -28,6 +28,7 @@ const TARGET = root.AH_PORTAL || 'none';
 const hooks = { pause: null, resume: null, mute: null, unmute: null };
 
 let ready = false;
+let wantLoadingStart = false;
 let playing = false;      // gameplayStart has fired and not yet been stopped
 let playedOnce = false;   // at least one match has actually been played
 let adOpen = false;
@@ -64,6 +65,9 @@ const backends = {
   },
 
   poki: {
+    /* Poki's SDK takes the loading signal before init(); CrazyGames refuses
+       every call until its own init() has resolved. */
+    preInit: true,
     init() {
       const sdk = root.PokiSDK;
       if (!sdk) return Promise.reject(new Error('no PokiSDK'));
@@ -161,33 +165,47 @@ const P = {
      answered. Never rejects, on purpose. */
   init() {
     return be.init().then(
-      () => { ready = true; },
-      () => { ready = false; });
+      () => {
+        ready = true;
+        // A loading signal that arrived too early is delivered now rather than
+        // dropped: it is the first half of a pair, and a portal that sees the
+        // finish without the start has been told the game loaded instantly.
+        if (wantLoadingStart) { wantLoadingStart = false; be.loadingStart(); }
+      },
+      () => { ready = false; wantLoadingStart = false; });
   },
 
-  loadingStart() { be.loadingStart(); },
-  loadingFinished() { be.loadingFinished(); },
+  /* Nothing may be reported to an SDK that is not listening yet, and nothing
+     at all once init has failed — that is the ad-blocked case, where the game
+     simply plays on. */
+  usable() { return ready || be.preInit === true; },
+
+  loadingStart() {
+    if (this.usable()) be.loadingStart();
+    else wantLoadingStart = true;
+  },
+  loadingFinished() { if (this.usable()) be.loadingFinished(); },
 
   gameplayStart() {
     if (playing) return;          // duplicate events are a review finding
     playing = true;
-    be.gameplayStart();
+    if (this.usable()) be.gameplayStart();
   },
 
   gameplayStop() {
     if (!playing) return;
     playing = false;
     playedOnce = true;            // an ad becomes permissible from here on
-    be.gameplayStop();
+    if (this.usable()) be.gameplayStop();
   },
 
   /* A win, a comeback, something worth the site celebrating with the player. */
-  happyTime() { be.happyTime(); },
+  happyTime() { if (this.usable()) be.happyTime(); },
 
   /* Between matches. Resolves when the game may carry on — with or without an
      ad having played, and even if the whole thing failed. */
   commercialBreak() {
-    if (!playedOnce || adOpen) return Promise.resolve();
+    if (!playedOnce || adOpen || !this.usable()) return Promise.resolve();
     const now = Date.now();
     if (now - lastAd < AD_GAP_MS) return Promise.resolve();
     lastAd = now;
@@ -197,7 +215,7 @@ const P = {
   /* Only ever from an explicit "watch an ad for X" tap. Resolves true when the
      reward was earned. */
   rewardedBreak() {
-    if (adOpen) return Promise.resolve(false);
+    if (adOpen || !this.usable()) return Promise.resolve(false);
     return be.rewarded().then((ok) => !!ok, () => { after(); return false; });
   },
 
