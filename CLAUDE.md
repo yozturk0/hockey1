@@ -29,6 +29,7 @@ Portal ürününün öncelikleri normal bir oyundan farklıdır:
 |---|---|---|
 | **Poki** | `https://game-cdn.poki.com/scripts/v2/poki-sdk.js` | `portal/build/poki/` |
 | **CrazyGames** | `https://sdk.crazygames.com/crazygames-sdk-v3.js` | `portal/build/crazygames/` |
+| **itch.io** | yok | `portal/build/itch/itch-air-hockey.zip` |
 | Kendi sitesi (Render) | yok | `portal/build/web/` veya doğrudan `web/` |
 | iOS (App Store) | — | `ios/` · **bu işten etkilenmez, dokunulmadı** |
 
@@ -125,6 +126,23 @@ tersi olduğunu 6 farklı pencere ölçüsünde doğrular.
 `navigator.language` okunur; açık bir seçim (localStorage) her zaman kazanır.
 Ayarlar'daki dil kartı yerinde.
 
+### K8 — Online sunucu adresi build zamanında verilir
+`web/` dışındaki her build başka birinin alan adından servis edilir (portal
+CDN'i, `html-classic.itch.zone`), yani aynı-origin soket tahmini yanlış
+hedefe gider. Sıra: `?server=` → `window.AH_WS` → aynı origin.
+
+```bash
+AH_WS=wss://senin-app.onrender.com/ws npm run build
+```
+
+`AH_WS` verilmezse portal/itch build'lerinde online mod çalışmaz; solo ve
+aynı-cihaz modları etkilenmez (hiç soket açmıyorlar — tarayıcıda doğrulandı).
+
+### K9 — itch.io: SDK yok, manifest yok, zip var
+itch.io oyunu kendi zone alan adında sandbox'lı iframe'de servis ediyor.
+Portal SDK'sı yok (iki portalın da markası yok → temiz), PWA manifest'i
+anlamsız. Build `index.html` kökte olacak şekilde zip'i kendisi üretiyor.
+
 ### K7 — Ödüllü reklam: sadece kozmetik
 9 top renginden 4'ü serbest, 5'i bir video karşılığı açılır. **Oynanışa etkisi
 yok** — "core gameplay'i ödüllü videonun arkasına koyma" kuralı gereği.
@@ -208,7 +226,8 @@ Sunucu artık brotli/gzip uyguluyor: `app.js` 53.7 KB → 14.5 KB.
 | 8 | Aynı cihazda 2 kişi doğrulaması | ✅ |
 | 9 | Minification + build sistemi + ölçüm | ✅ |
 | 10 | Başvuru metni, isim, metrikler | ✅ |
-| 11 | Gerçek cihazda oynanış + denge ayarı | ⬜ **sıradaki** |
+| 11 | itch.io hedefi + build zamanı sunucu adresi | ✅ |
+| 12 | Gerçek cihazda oynanış + denge ayarı | ⬜ **sıradaki** |
 
 ---
 
@@ -230,8 +249,12 @@ Sunucu artık brotli/gzip uyguluyor: `app.js` 53.7 KB → 14.5 KB.
 npm start          # dev sunucu → http://localhost:8080
 npm test           # motor + koordinat testleri
 npm run test:server# uçtan uca soket testleri (sunucu ayakta olmalı)
-npm run build      # üç portal build'i + boyut raporu
+npm run build      # dört build (web/poki/crazygames/itch) + boyut raporu
+npm run build:itch # sadece itch.io zip'i
 node portal/build.js poki    # tek hedef
+
+# online modun portal/itch build'inde çalışması için:
+AH_WS=wss://senin-app.onrender.com/ws npm run build
 ```
 
 ---
@@ -250,5 +273,8 @@ node portal/build.js poki    # tek hedef
   keşfedildi → 8.1 açık konusu.
 - **2026-08-27** — Bot adaptif zorluk aralığı 0.12–0.70'e kilitlendi; üst uçta
   maçlar kilitleniyordu.
+- **2026-08-27** — itch.io dördüncü hedef olarak eklendi (zip çıktısı). Aynı
+  işte online modun portal build'lerinde de kırık olduğu fark edildi: soket
+  adresi aynı-origin tahmin ediliyordu → `AH_WS` build değişkeni (K8).
 - **2026-08-27** — Fizik temposuna **dokunulmadı**: gameplay kararı, kullanıcıya
   bırakıldı (8.2).

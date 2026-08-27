@@ -8,11 +8,20 @@
      portal/build/web/          no portal, minified — the plain site
      portal/build/poki/         Poki SDK
      portal/build/crazygames/   CrazyGames SDK
+     portal/build/itch/         no portal — plus itch-air-hockey.zip to upload
 
    Poki and CrazyGames each refuse a build carrying the other's SDK, which is
    the whole reason this file exists rather than a single "production" folder.
 
-   Usage:  node portal/build.js [target ...]      (default: all three)
+   Every build except the plain site is served from a domain that is not the
+   game server, so online mode needs to be told where the server lives:
+
+     AH_WS=wss://your-app.onrender.com/ws node portal/build.js
+
+   Without it those builds fall back to a same-origin socket, which on a portal
+   or on itch.io means no online play. Solo and same-phone modes never need it.
+
+   Usage:  node portal/build.js [target ...]      (default: all)
 */
 'use strict';
 
@@ -21,6 +30,7 @@ const path = require('path');
 const zlib = require('zlib');
 const { minify } = require('terser');
 const CleanCSS = require('clean-css');
+const { execFileSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'web');
@@ -49,7 +59,20 @@ const TARGETS = {
     sdk: 'https://sdk.crazygames.com/crazygames-sdk-v3.js',
     pwa: false,
   },
+  /* itch.io serves the game from a sandboxed iframe on its own zone domain, so
+     no portal SDK and no manifest — but it does want the whole thing as one
+     zip with index.html at the root. */
+  itch: {
+    portal: 'none',
+    sdk: null,
+    pwa: false,
+    zip: 'itch-air-hockey.zip',
+  },
 };
+
+/* The absolute WebSocket URL of the game server, for the builds that are not
+   served by it. Empty means "same origin", which is only correct for `web`. */
+const WS = process.env.AH_WS || '';
 
 const read = (f) => fs.readFileSync(path.join(SRC, f), 'utf8');
 const kb = (n) => (n / 1024).toFixed(1) + ' KB';
@@ -88,7 +111,8 @@ function buildHtml(cfg) {
   }
   let head = '';
   if (cfg.sdk) head += '<script src="' + cfg.sdk + '"></script>\n';
-  head += '<script>window.AH_PORTAL="' + cfg.portal + '";</script>\n';
+  head += '<script>window.AH_PORTAL="' + cfg.portal + '";' +
+          (cfg.pwa || !WS ? '' : 'window.AH_WS="' + WS + '";') + '</script>\n';
   html = html.replace('</body>', head + '<script src="game.js"></script>\n</body>');
 
   if (!cfg.pwa) {
@@ -151,6 +175,12 @@ async function build(name) {
     files.push(['icon.svg', svg]);
   }
 
+  if (cfg.zip) {
+    // `zip` ships with macOS and every Linux image this would run on; -j keeps
+    // index.html at the archive root, which is what itch.io requires.
+    execFileSync('zip', ['-jq9', cfg.zip, ...files.map(([f]) => f)], { cwd: dir });
+  }
+
   const total = files.reduce((a, [, c]) => {
     const w = weigh(c);
     return { raw: a.raw + w.raw, gzip: a.gzip + w.gzip, br: a.br + w.br };
@@ -173,5 +203,8 @@ async function build(name) {
   console.log('  ' + 'dosya'.padEnd(26) + 'ham'.padStart(7) +
               'gzip'.padStart(10) + 'brotli'.padStart(10));
   for (const n of names) await build(n);
-  console.log('\nBitti. Portala yuklenecek olan gzip/brotli sutunu.\n');
+  console.log('\nBitti. Portala yuklenecek olan gzip/brotli sutunu.');
+  console.log(WS ? 'Online sunucu: ' + WS
+                 : 'AH_WS verilmedi — portal/itch build\'lerinde online mod kapali.');
+  console.log('');
 })().catch((e) => { console.error(e); process.exit(1); });

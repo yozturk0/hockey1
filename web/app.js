@@ -237,9 +237,16 @@ const Net = {
      noticed yet - which is the state that used to need a reload. */
   lastRx: 0,
 
+  /* Three sources, in order. `?server=` is for hand testing. `AH_WS` is set at
+     build time (portal/build.js) and is what makes online mode work at all on
+     a portal or on itch.io, where the page is served from someone else's
+     domain and the same-origin guess below would point at them. Falling back
+     to same-origin is right for the plain site, where the page and the socket
+     are the same Node process. */
   url() {
     const q = new URLSearchParams(location.search).get('server');
     if (q) return q;
+    if (window.AH_WS) return window.AH_WS;
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${proto}//${location.host}/ws`;
   },

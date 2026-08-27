@@ -12,7 +12,8 @@
     "dev": "node server/server.js",
     "test": "node test/engine.test.js && node test/view.test.js",
     "test:server": "node test/server.test.js",
-    "build": "node portal/build.js"
+    "build": "node portal/build.js",
+    "build:itch": "node portal/build.js itch"
   },
   "dependencies": {
     "ws": "^8.18.0"
