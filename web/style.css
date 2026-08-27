@@ -558,3 +558,13 @@ body.landscape .hud-meta{margin-left:0}
 /* The floating reconnect button is a fix for a problem only an online match
    can have, so it stays out of the way until there is a socket to mend. */
 body:not(.net-used) .reconnect{display:none}
+
+/* The "server is waking up" notice. Deliberately quiet: it explains a wait,
+   it is not an error. */
+.waking{
+  display:flex;flex-direction:column;gap:10px;
+  padding:14px;border-radius:var(--r);
+  background:var(--fill);border:1px solid var(--line)
+}
+.waking.hidden{display:none}
+.waking .hint{margin-top:0;text-align:center}
