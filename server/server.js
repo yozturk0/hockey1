@@ -41,6 +41,10 @@ function createRoom(opts) {
     code,
     game: new Game(opts),
     seats: { a: null, b: null },
+    /* Who *owns* each seat, by the client's own persistent id. A player who
+       drops - or taps reconnect - must come back to the seat they left, or the
+       host silently becomes the guest and loses the rules. */
+    owners: { a: null, b: null },
     names: { a: 'Oyuncu 1', b: 'Oyuncu 2' },
     ready: { a: false, b: false },
     halfSince: 0,
@@ -132,7 +136,9 @@ function leaveRoom(ws) {
     }
     if (occupancy(room) === 0) room.emptySince = Date.now();
     broadcast(room, roomInfo(room));
-    broadcast(room, { t: 'peer', on: false });
+    /* Only the player who is still in the room needs telling. Sending it to
+       everyone used to include the leaver's own replacement socket. */
+    send(room.seats[ws.side === 'a' ? 'b' : 'a'], { t: 'peer', on: false });
   }
   ws.room = null;
   ws.side = null;
@@ -218,9 +224,15 @@ const httpServer = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
   ws.room = null;
   ws.side = null;
+  /* A per-install id the client sends in the query string. It only ever
+     decides which seat a returning player gets back; nothing is stored. */
+  try {
+    const q = new URL(req.url, 'http://x').searchParams.get('pid') || '';
+    ws.pid = /^[A-Za-z0-9_-]{6,40}$/.test(q) ? q : null;
+  } catch (_) { ws.pid = null; }
   ws.alive = true;
   ws.msgCount = 0;
   ws.msgWindow = Date.now();
@@ -251,6 +263,7 @@ wss.on('connection', (ws) => {
         const room = createRoom(readOpts(m));
         if (!room) return send(ws, { t: 'err', k: 'create', m: 'Oda olusturulamadi, tekrar dene.' });
         room.seats.a = ws;
+        room.owners.a = ws.pid;
         if (typeof m.name === 'string' && m.name.trim()) {
           room.names.a = m.name.trim().slice(0, 14);
         }
@@ -267,13 +280,20 @@ wss.on('connection', (ws) => {
         const room = rooms.get(code);
         if (!room) return send(ws, { t: 'err', k: 'notFound', m: 'Bu kodla bir oda bulunamadi.' });
 
+        /* Coming back to a seat you already own beats taking an empty one:
+           a host who reconnects has to stay the host. Only then does a new
+           arrival fall into whichever seat is free - 'b' first, so the maker
+           of the room keeps 'a' while the room is still only theirs. */
         let side = null;
-        if (!room.seats.b) side = 'b';
+        if (ws.pid && room.owners.a === ws.pid && !room.seats.a) side = 'a';
+        else if (ws.pid && room.owners.b === ws.pid && !room.seats.b) side = 'b';
+        else if (!room.seats.b) side = 'b';
         else if (!room.seats.a) side = 'a';
         if (!side) return send(ws, { t: 'err', k: 'full', m: 'Bu oda dolu.' });
 
         leaveRoom(ws);
         room.seats[side] = ws;
+        room.owners[side] = ws.pid;
         if (typeof m.name === 'string' && m.name.trim()) {
           room.names[side] = m.name.trim().slice(0, 14);
         }
@@ -282,7 +302,10 @@ wss.on('connection', (ws) => {
         send(ws, { t: 'joined', code: room.code, side, target: room.game.target,
                    pad: room.game.padR, mode: room.game.mode, half: room.game.halfAt });
         broadcast(room, roomInfo(room));
-        broadcast(room, { t: 'peer', on: true });
+        /* "Your friend joined" goes to the friend, never back to the arrival.
+           Broadcasting it was why reconnecting to your own empty lobby popped
+           up a phantom opponent. */
+        send(room.seats[side === 'a' ? 'b' : 'a'], { t: 'peer', on: true });
         if (room.game.state === ST.HALFTIME) send(ws, halfInfo(room));
 
         if (occupancy(room) === 2) {

@@ -1,9 +1,16 @@
 # CLAUDE.md — Air Hockey / Portal Sürümü
 
-Bu dosya oturumlar arası hafızadır. Yeni bir oturum **önce bunu okur**, sonra
-kaldığı yerden devam eder. Her önemli karardan sonra güncellenir.
+> **Yeni bir hesap / yeni bir oturum buraya değil, önce şuraya bakar:**
+> 1. [`HANDOFF.md`](HANDOFF.md) — proje nedir, nerede kaldık, sırada ne var, neyi insan yapmalı
+> 2. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — kod nasıl çalışıyor, neye dokunulmaz
+> 3. [`docs/PORTAL.md`](docs/PORTAL.md) — portal kuralları, build, başvuru kontrol listesi
+>
+> Bu dosya (CLAUDE.md) onların üstüne gelen **karar günlüğüdür**: K1–K15 mimari
+> kararları ve neden öyle yapıldıkları. Detay gerekince buraya inilir.
 
-Son güncelleme: 2026-08-27 · Dal: `feature/devre-temalar-sert-vurus`
+Bu dosya oturumlar arası hafızadır. Her önemli karardan sonra güncellenir.
+
+Son güncelleme: 2026-08-28 · Dal: `feature/devre-temalar-sert-vurus`
 
 ---
 
@@ -143,6 +150,91 @@ itch.io oyunu kendi zone alan adında sandbox'lı iframe'de servis ediyor.
 Portal SDK'sı yok (iki portalın da markası yok → temiz), PWA manifest'i
 anlamsız. Build `index.html` kökte olacak şekilde zip'i kendisi üretiyor.
 
+### K9b — Koltuk sahipliği istemci kimliğiyle
+Sunucu `join`'de **boş olan ilk koltuğu** veriyordu. Odayı kuran kişi yenileme
+tuşuna bastığında kendi odasına **b** olarak dönüyor, host'luğu ve kural
+kontrolünü kaybediyordu. Artık istemci kalıcı bir `pid`'i soket adresinde
+yolluyor (`/ws?pid=…`), sunucu `room.owners` ile kimin hangi koltukta olduğunu
+hatırlıyor ve dönen oyuncuya **kendi koltuğunu** geri veriyor.
+
+Aynı işte `peer` mesajı düzeltildi: eskiden `broadcast` ile **odaya giren
+kişinin kendisine de** gidiyordu, bu yüzden kendi boş lobisine yeniden bağlanan
+oyuncuya "arkadaşın katıldı!" çıkıyordu. Artık sadece karşı koltuğa gidiyor.
+`test/seat.test.js` bu iki davranışı kilitliyor.
+
+### K10 — iOS'ta bot (web ile eşitlik)
+`web/bot.js` → `ios/AirHockey/Bot.swift` birebir portlandı (aynı sayılar, aynı
+0.12–0.70 uyum bandı). iOS menüsünün ilk butonu artık web'deki gibi **"Oyna"**:
+kurulum ekranı yok, doğrudan bota karşı 5 gollük maç. `Engine.swift` fiziğine
+dokunulmadı — bot da tıpkı parmak gibi sadece `setInput` çağırıyor.
+
+### K11 — Neon parlaması filtre değil, halka
+SwiftUI `Canvas` içinde `addFilter(.shadow:)` **her çağrı için** ayrı bir
+offscreen buffer + Gaussian blur demek, ve her karede beşi birden vardı
+(iki kale, iki sopa, top). Yerine üç düz halka/kalın çizgi kondu; koyu temada
+göz aynı şeyi görüyor, kare başına beş offscreen gitti. Sahanın iç yarı
+tonlaması da `drawLayer`+`clip` yerine köşeleri yuvarlatılmış path'e çevrildi.
+
+### K12 — iOS'ta çevrimdışı modların donması: Canvas yeniden çizilmiyordu
+Bot ve aynı-cihaz maçları "3-2-1" biter bitmez **ekranda** donuyordu. Motor
+donmuyordu: `tick` 60 fps koşuyor, puck ilerliyordu (log ile doğrulandı) —
+çizilmiyordu.
+
+Sebep: `GameView` sahayı `TimelineView(.animation) { _ in Canvas { … } }`
+içinde çiziyor ve **timeline bağlamını kullanmıyordu**. `world` bilerek
+`@Published` değil (K: kare başına yayın SwiftUI'yi boğar), dolayısıyla kapanışın
+girdilerinin hiçbiri kareden kareye değişmiyor → SwiftUI `Canvas`'ı yeniden
+çizmeye gerek duymuyor. **Online bunu gizliyordu:** `snap` @Published ve saniyede
+onlarca kez geliyor, görünümü yeniden yayınlıyordu. Çevrimdışı modlar hiçbir şey
+yayınlamadığı için saha ekranda kalakalıyordu.
+
+Çözüm: `tl.date` çizim çağrısına `at:` olarak geçiriliyor. Değeri okunmuyor;
+kapanışın her kare gerçekten farklı olmasını sağlamak için var. Bu, önceki
+oturumdaki "5 fps" gözlemini de açıklıyor — kare hızı değil, seyrek geçersiz
+kılmaydı.
+
+### K13 — Solo maç da oyuncunun kurallarıyla oynanır
+"Oyna" anında başlar (K3 korunuyor) ama artık sabit 5 gol / klasik değil:
+`Prefs.soloTarget / soloMode / soloHalf` Ayarlar'daki **"Bilgisayara karşı"**
+kartından seçilir ve hatırlanır. Varsayılanlar eskisiyle aynı (5 gol, klasik,
+devre yok), yani kurulum ekranı olmadan da tek tuşla oynanır. Aynı-cihaz modu
+zaten `LocalView` ile tam eşitti; bu, soloyu da o seviyeye çıkarıyor.
+Çevrimdışı modların hiçbiri soket açmıyor — `net.connect()` yalnızca açık online
+eylemlerinde çağrılıyor (doğrulandı).
+
+### K14 — Bot bir imleç değil, bir kol (web + iOS)
+Bot "piksel piksel" titriyordu. Sebep zorlukta değil, **hareket katmanındaydı**:
+`plan()` her yeniden nişanda (~40-190 ms) **taze bir rastgele sapma** üretip
+hedefe anında uyguluyordu; sopa da hedefe sabit hızla gidip **tam üstünde
+duruyordu**. Yani her ~100 ms'de bir ışınlanma + tam duruş = görsel titreşim.
+
+Üç değişiklik (ikisi de aynı sayılarla, `web/bot.js` ↔ `Bot.swift`):
+- **Nişan hatası sürüklenme oldu.** Ornstein-Uhlenbeck adımı (`WANDER_TAU`
+  = 0.55 sn). Uzun vadeli yayılım eskisiyle aynı, ama sapma kareler *arasında*
+  yürüyor → yanlış tahmin "yanlış hamle" gibi görünüyor, "tik" gibi değil.
+- **Plana yumuşak geçiş** (`track`, 6-14 1/s): el yeni plana ışınlanmaz, yaslanır.
+- **Momentum** (`accel`, 8-21 1/s) + varış yavaşlaması (`ARRIVE` = 0.09 sn):
+  sopa tek karede yön değiştiremez, hedefe çarparak durmaz.
+
+Ölçüm (600 sn'lik başsız maç, kare başına ortalama ivme değişimi):
+eski **28-46** → yeni **2-4** birim/s². Anlamlı yön dönüşü (>20 birim/s)
+saniyede 0. Zorluk tablosu (`reactMs/speed/error/read/lazy`) ve 0.12-0.70
+uyum bandı **değişmedi** — bu bir denge ayarı değil, hareket düzeltmesi.
+
+### K15 — iOS 120 Hz: eksik olan tek şey plist anahtarıydı
+`Ticker` zaten `CAFrameRateRange(60...120, preferred: 120)` istiyordu, ama
+iOS bunu **`CADisableMinimumFrameDuration`** olmadan yok sayıp her uygulamayı
+ProMotion cihazlarda 60 Hz'e kilitliyor. Anahtar `AirHockey-Info.plist`'e
+eklendi (derlenmiş `.app`'in Info.plist'inde doğrulandı). Aynı anahtar
+`TimelineView(.animation)` çizim zamanlayıcısını da 120'ye çıkarır — yani
+hem fizik hem çizim: iPhone 13 Pro/Pro Max, 14 Pro/Pro Max, 15 Pro/Pro Max,
+16 Pro/Pro Max ve 17 / 17 Pro ailesinin tamamı. ProMotion olmayan modeller
+(13/14 standart, 15/16 standart) 60 Hz'de kalır — donanım sınırı.
+
+Fizik zaten kare hızından bağımsız: `Engine.step(dt:)` sabit adım kullanmıyor,
+alt-adım sayısını harekete göre seçiyor. 60 vs 120 Hz simülasyonu aynı maç
+akışını verdi.
+
 ### K7 — Ödüllü reklam: sadece kozmetik
 9 top renginden 4'ü serbest, 5'i bir video karşılığı açılır. **Oynanışa etkisi
 yok** — "core gameplay'i ödüllü videonun arkasına koyma" kuralı gereği.
@@ -204,7 +296,22 @@ Sunucu artık brotli/gzip uyguluyor: `app.js` 53.7 KB → 14.5 KB.
 3. **`test/server.test.js` içindeki "the break happens online too"** testi
    kalıyor. **Bu değişikliklerden önce de kalıyordu** (baseline'da doğrulandı),
    sebebi 2. maddeyle aynı: sentetik oyuncular 90 sn'de 2 gol atamıyor.
-4. **Gerçek cihazda oynanış testi yapılmadı.** Bu oturumda tarayıcı paneli
+4. **Render'daki sunucu eski.** `https://airhockey-eu.onrender.com` ayakta
+   ama `/ping` 404 veriyor ve `/health` içinde `players` alanı yok — yani
+   `5b1a7b2` öncesi bir sürüm çalışıyor. Bu daldaki sunucu değişiklikleri
+   (koltuk sahipliği, `peer` hedefi, brotli, `/ping`) **deploy edilene kadar
+   canlıda yok.** iOS uygulaması varsayılan olarak bu adrese bağlanıyor.
+5. **Simülatör paneli hâlâ çökük**, ama artık engel değil: uygulama
+   `xcrun simctl launch` + `simctl io screenshot` ile başsız sürülüp
+   doğrulandı (donma bu yolla yakalandı ve düzeltildiği bu yolla kanıtlandı).
+   Yine de gerçek cihazda kare hızı ölçülmedi — simülatördeki Debug derlemesi
+   yazılımla çiziyor.
+6. **(eski 5) Simülatör paneli önceki oturumda da çökük.** Derleme başarılı (headless
+   `xcodebuild`), ama uygulama çalışır halde görülemedi: kare hızı düzeltmesi
+   ve bot dengesi gerçek cihazda ölçülmeyi bekliyor. Ayrıca simülatördeki
+   Debug derlemesi yazılımla çiziyor — 5 fps orada beklenen bir şey, cihazdaki
+   sayı ayrı ölçülmeli.
+6. **Gerçek cihazda oynanış testi yapılmadı.** Bu oturumda tarayıcı paneli
    görünür olmadı; mantık, SDK yaşam döngüsü ve koordinat matematiği testlerle
    ve konsol üzerinden doğrulandı, ama "eliyle oynayınca nasıl hissettiriyor"
    doğrulanmadı. Bot zorluğu ve maç temposu buna göre son ayarını bekliyor.
@@ -228,6 +335,14 @@ Sunucu artık brotli/gzip uyguluyor: `app.js` 53.7 KB → 14.5 KB.
 | 10 | Başvuru metni, isim, metrikler | ✅ |
 | 11 | itch.io hedefi + build zamanı sunucu adresi | ✅ |
 | 12 | Gerçek cihazda oynanış + denge ayarı | ⬜ **sıradaki** |
+| 19 | Bot hareketi: sürüklenen hata + momentum (K14) | ✅ ölçüldü |
+| 20 | iOS 120 Hz / ProMotion (K15) | ✅ cihazda doğrulanmalı |
+| 17 | iOS çevrimdışı mod donması (K12) | ✅ simülatörde doğrulandı |
+| 18 | Solo maç kuralları + Ayarlar kartı (K13) | ✅ |
+| 13 | Hayalet "arkadaşın katıldı" + koltuk kaybı (K9b) | ✅ testli |
+| 14 | iOS render maliyeti (K11) + sesi ana iş parçacığından çıkarma | ✅ |
+| 15 | iOS bot / tek kişilik mod (K10) | ✅ cihazda denenmeli |
+| 16 | Render'a güncel sunucuyu deploy et | ⬜ **kullanıcı** |
 
 ---
 
@@ -248,7 +363,7 @@ Sunucu artık brotli/gzip uyguluyor: `app.js` 53.7 KB → 14.5 KB.
 ```bash
 npm start          # dev sunucu → http://localhost:8080
 npm test           # motor + koordinat testleri
-npm run test:server# uçtan uca soket testleri (sunucu ayakta olmalı)
+npm run test:server# uçtan uca soket + koltuk testleri (sunucu ayakta olmalı)
 npm run build      # dört build (web/poki/crazygames/itch) + boyut raporu
 npm run build:itch # sadece itch.io zip'i
 node portal/build.js poki    # tek hedef
@@ -276,5 +391,9 @@ AH_WS=wss://senin-app.onrender.com/ws npm run build
 - **2026-08-27** — itch.io dördüncü hedef olarak eklendi (zip çıktısı). Aynı
   işte online modun portal build'lerinde de kırık olduğu fark edildi: soket
   adresi aynı-origin tahmin ediliyordu → `AH_WS` build değişkeni (K8).
+- **2026-08-28** — Çevrimdışı modların donması **render katmanında** çıktı,
+  fizikte veya botta değil: 40 maçlık başsız `Engine`+`Bot` simülasyonu tek bir
+  kilitlenme veya çökme vermedi. Asıl kanıt `simctl` ekran görüntülerinin
+  bayt bayt aynı çıkması + `tick`'in 60 fps loglaması oldu (K12).
 - **2026-08-27** — Fizik temposuna **dokunulmadı**: gameplay kararı, kullanıcıya
   bırakıldı (8.2).

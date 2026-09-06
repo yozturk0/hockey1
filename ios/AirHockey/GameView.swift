@@ -1,5 +1,6 @@
 import SwiftUI
 import QuartzCore
+import UIKit
 
 /// Display-link driven clock. ProMotion devices get the full 120 Hz.
 final class Ticker: NSObject {
@@ -41,9 +42,19 @@ struct GameView: View {
             ZStack {
                 T.bg.ignoresSafeArea()
 
-                TimelineView(.animation) { _ in
+                TimelineView(.animation) { tl in
+                    // The frame stamp is handed to `draw` and never used for
+                    // anything. It has to be there: `world` is deliberately not
+                    // @Published, so nothing else in this closure changes from
+                    // one frame to the next, and a Canvas whose inputs all look
+                    // identical is simply not asked to redraw. Online play hid
+                    // this - `snap` arrives on the wire and republished the
+                    // view a few dozen times a second - but a solo or
+                    // same-phone match publishes nothing at all, so the rink
+                    // froze on screen while the match carried on underneath.
                     Canvas { ctx, size in
-                        draw(ctx, RinkLayout(size: size), size: size)
+                        draw(ctx, RinkLayout(size: size), size: size,
+                             at: tl.date.timeIntervalSinceReferenceDate)
                     }
                 }
 
@@ -63,17 +74,22 @@ struct GameView: View {
         .onAppear {
             ticker.onTick = { dt in m.tick(dt: dt) }
             ticker.start()
+            // Tied to the rink being on screen rather than to entering and
+            // leaving a match, so there is no path that leaves it disabled.
+            UIApplication.shared.isIdleTimerDisabled = true
         }
         .onDisappear {
             ticker.stop()
             owners.removeAll()
+            UIApplication.shared.isIdleTimerDisabled = false
         }
     }
 
     // MARK: - input
 
     private func handleTouch(id: Int, point: CGPoint, phase: Int, layout: RinkLayout) {
-        guard !m.showHalftime else { return }
+        // Nothing behind a full-screen sheet should still be draggable.
+        guard !m.showHalftime, !m.showOverlay else { return }
         var v = layout.field(point)
         // Second half: the rink is drawn a half turn round, so touches come
         // back through the same turn.
@@ -100,7 +116,12 @@ struct GameView: View {
 
     // MARK: - rink drawing
 
-    private func draw(_ base: GraphicsContext, _ L: RinkLayout, size: CGSize) {
+    /// `at` is the frame's timestamp. Nothing reads it - see the note at the
+    /// call site: it exists so that each frame's drawing closure is genuinely
+    /// different from the last one's, which is what makes the Canvas redraw.
+    private func draw(_ base: GraphicsContext, _ L: RinkLayout, size: CGSize,
+                      at frameStamp: TimeInterval) {
+        _ = frameStamp
         var ctx = base
         // Second half: the whole rink is drawn upside down, because the phone
         // itself has been turned around on the table.
@@ -122,38 +143,36 @@ struct GameView: View {
             startPoint: CGPoint(x: rect.midX, y: rect.minY),
             endPoint: CGPoint(x: rect.midX, y: rect.maxY)))
 
-        ctx.drawLayer { c in
-            c.clip(to: rink)
+        // The two half-tints used to be clipped inside a `drawLayer`, which
+        // costs an offscreen buffer on every single frame. Rounding only the
+        // corners each half actually touches gets the same picture for free.
+        let corner = L.len(9)
+        ctx.fill(halfRect(rect, top: false, corner: corner), with: .color(T.me.opacity(0.06)))
+        ctx.fill(halfRect(rect, top: true, corner: corner), with: .color(T.foe.opacity(0.06)))
 
-            c.fill(Path(CGRect(x: rect.minX, y: rect.midY, width: rect.width, height: rect.height / 2)),
-                   with: .color(T.me.opacity(0.06)))
-            c.fill(Path(CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height / 2)),
-                   with: .color(T.foe.opacity(0.06)))
+        let ink = PAL.ink
+        let lw = max(1, L.len(0.5))
 
-            let ink = PAL.ink
-            let lw = max(1, L.len(0.5))
+        var mid = Path()
+        mid.move(to: CGPoint(x: rect.minX, y: L.py(Field.H / 2)))
+        mid.addLine(to: CGPoint(x: rect.maxX, y: L.py(Field.H / 2)))
+        ctx.stroke(mid, with: .color(ink),
+                   style: StrokeStyle(lineWidth: lw, dash: [L.len(3), L.len(3)]))
 
-            var mid = Path()
-            mid.move(to: CGPoint(x: rect.minX, y: L.py(Field.H / 2)))
-            mid.addLine(to: CGPoint(x: rect.maxX, y: L.py(Field.H / 2)))
-            c.stroke(mid, with: .color(ink),
-                     style: StrokeStyle(lineWidth: lw, dash: [L.len(3), L.len(3)]))
+        let cx = L.px(Field.W / 2), cy = L.py(Field.H / 2)
+        ctx.stroke(circle(cx, cy, L.len(16)), with: .color(ink), lineWidth: lw)
+        ctx.fill(circle(cx, cy, L.len(2.2)), with: .color(ink))
 
-            let cx = L.px(Field.W / 2), cy = L.py(Field.H / 2)
-            c.stroke(circle(cx, cy, L.len(16)), with: .color(ink), lineWidth: lw)
-            c.fill(circle(cx, cy, L.len(2.2)), with: .color(ink))
-
-            // goal creases
-            let crease = PAL.inkSoft
-            var top = Path()
-            top.addArc(center: CGPoint(x: cx, y: L.py(0)), radius: L.len(26),
-                       startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
-            c.stroke(top, with: .color(crease), lineWidth: lw)
-            var bot = Path()
-            bot.addArc(center: CGPoint(x: cx, y: L.py(Field.H)), radius: L.len(26),
-                       startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
-            c.stroke(bot, with: .color(crease), lineWidth: lw)
-        }
+        // goal creases
+        let crease = PAL.inkSoft
+        var top = Path()
+        top.addArc(center: CGPoint(x: cx, y: L.py(0)), radius: L.len(26),
+                   startAngle: .degrees(0), endAngle: .degrees(180), clockwise: false)
+        ctx.stroke(top, with: .color(crease), lineWidth: lw)
+        var bot = Path()
+        bot.addArc(center: CGPoint(x: cx, y: L.py(Field.H)), radius: L.len(26),
+                   startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
+        ctx.stroke(bot, with: .color(crease), lineWidth: lw)
 
         drawGoal(ctx, L, y: L.py(0), color: T.foe)
         drawGoal(ctx, L, y: L.py(Field.H), color: T.me)
@@ -179,6 +198,29 @@ struct GameView: View {
         Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2))
     }
 
+    /// Half of the rink with only the two corners it shares with the boards
+    /// rounded, so the ice tints follow the board line without a clip.
+    private func halfRect(_ rect: CGRect, top: Bool, corner: CGFloat) -> Path {
+        let r = CGRect(x: rect.minX, y: top ? rect.minY : rect.midY,
+                       width: rect.width, height: rect.height / 2)
+        return Path(UIBezierPath(roundedRect: r,
+                                 byRoundingCorners: top ? [.topLeft, .topRight]
+                                                        : [.bottomLeft, .bottomRight],
+                                 cornerRadii: CGSize(width: corner, height: corner)).cgPath)
+    }
+
+    /// A neon halo built from three flat rings instead of a blurred offscreen
+    /// layer. `GraphicsContext.addFilter(.shadow:)` forces a separate buffer
+    /// and a Gaussian blur *per call*, and there were five of them in every
+    /// frame - which is what a rink running at single-figure frame rates was
+    /// actually spending its time on. This reads the same at rink scale.
+    private func bloom(_ ctx: GraphicsContext, _ p: CGPoint, _ r: CGFloat, _ color: Color) {
+        guard PAL.glow else { return }
+        ctx.fill(circle(p.x, p.y, r * 1.55), with: .color(color.opacity(0.10)))
+        ctx.fill(circle(p.x, p.y, r * 1.28), with: .color(color.opacity(0.14)))
+        ctx.fill(circle(p.x, p.y, r * 1.10), with: .color(color.opacity(0.18)))
+    }
+
     /// A soft contact shadow reads as depth on the light rinks, where a neon
     /// glow would just look muddy.
     private func drawShadow(_ ctx: GraphicsContext, _ p: CGPoint, _ r: CGFloat) {
@@ -189,14 +231,18 @@ struct GameView: View {
     }
 
     private func drawGoal(_ ctx: GraphicsContext, _ L: RinkLayout, y: CGFloat, color: Color) {
-        ctx.drawLayer { c in
-            if PAL.glow { c.addFilter(.shadow(color: color, radius: L.len(4))) }
-            var p = Path()
-            p.move(to: CGPoint(x: L.px(Field.gx0), y: y))
-            p.addLine(to: CGPoint(x: L.px(Field.gx1), y: y))
-            c.stroke(p, with: .color(color),
-                     style: StrokeStyle(lineWidth: max(3, L.len(1.6)), lineCap: .round))
+        var p = Path()
+        p.move(to: CGPoint(x: L.px(Field.gx0), y: y))
+        p.addLine(to: CGPoint(x: L.px(Field.gx1), y: y))
+        let w = max(3, L.len(1.6))
+        // Same halo trick as `bloom`, for a line: widening strokes underneath.
+        if PAL.glow {
+            ctx.stroke(p, with: .color(color.opacity(0.10)),
+                       style: StrokeStyle(lineWidth: w * 4.2, lineCap: .round))
+            ctx.stroke(p, with: .color(color.opacity(0.16)),
+                       style: StrokeStyle(lineWidth: w * 2.4, lineCap: .round))
         }
+        ctx.stroke(p, with: .color(color), style: StrokeStyle(lineWidth: w, lineCap: .round))
     }
 
     private func drawPuck(_ ctx: GraphicsContext, _ L: RinkLayout, at v: Vec) {
@@ -204,13 +250,11 @@ struct GameView: View {
         let r = L.len(Field.puckR)
         let stops = Prefs.shared.puckStops
         drawShadow(ctx, p, r)
-        ctx.drawLayer { c in
-            if PAL.glow { c.addFilter(.shadow(color: stops[1].opacity(0.9), radius: L.len(5))) }
-            c.fill(circle(p.x, p.y, r), with: .radialGradient(
-                Gradient(colors: stops),
-                center: CGPoint(x: p.x - r * 0.3, y: p.y - r * 0.4),
-                startRadius: 0, endRadius: r * 1.4))
-        }
+        bloom(ctx, p, r, stops[1])
+        ctx.fill(circle(p.x, p.y, r), with: .radialGradient(
+            Gradient(colors: stops),
+            center: CGPoint(x: p.x - r * 0.3, y: p.y - r * 0.4),
+            startRadius: 0, endRadius: r * 1.4))
         // A hairline in the opposite direction to the rink keeps a black puck on
         // a dark rink (or a white one on ice) from disappearing.
         ctx.stroke(circle(p.x, p.y, r - max(0.4, L.len(0.12))),
@@ -226,14 +270,12 @@ struct GameView: View {
         c.opacity = dim ? 0.55 : 1
         drawShadow(c, p, r)
 
-        c.drawLayer { g in
-            if PAL.glow { g.addFilter(.shadow(color: color, radius: L.len(4))) }
-            g.fill(circle(p.x, p.y, r), with: .radialGradient(
-                Gradient(stops: [.init(color: Color.white.opacity(0.30), location: 0),
-                                 .init(color: color, location: 0.62),
-                                 .init(color: color, location: 1)]),
-                center: p, startRadius: r * 0.25, endRadius: r))
-        }
+        bloom(c, p, r, color)
+        c.fill(circle(p.x, p.y, r), with: .radialGradient(
+            Gradient(stops: [.init(color: Color.white.opacity(0.30), location: 0),
+                             .init(color: color, location: 0.62),
+                             .init(color: color, location: 1)]),
+            center: p, startRadius: r * 0.25, endRadius: r))
         c.fill(circle(p.x, p.y, r * 0.52), with: .color(PAL.padInner))
         c.stroke(circle(p.x, p.y, r * 0.52), with: .color(PAL.padRing),
                  lineWidth: max(1, L.len(0.35)))
@@ -244,7 +286,7 @@ struct GameView: View {
     private var hud: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Text(m.mode == .local ? S("game.p2") : m.foeName.uppercased())
+                Text(foeLabel)
                     .font(.system(size: sz(12), weight: .bold)).tracking(1)
                     .foregroundStyle(T.dim)
                 Text("\(m.scoreFoe)")
@@ -262,6 +304,9 @@ struct GameView: View {
                     .font(.system(size: sz(34), weight: .black, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(T.me)
+                // "Player 1" only means something when there is a Player 2
+                // sitting opposite. Against the computer, as online, the
+                // bottom mallet is simply yours.
                 Text(m.mode == .local ? S("game.p1") : S("game.me"))
                     .font(.system(size: sz(12), weight: .bold)).tracking(1)
                     .foregroundStyle(T.dim)
@@ -287,6 +332,16 @@ struct GameView: View {
                 }
             }
             .padding(.trailing, 12)
+        }
+    }
+
+    /// Who is on the far side of the rink: the other person, the other finger,
+    /// or the machine.
+    private var foeLabel: String {
+        switch m.mode {
+        case .solo:   return S("game.bot")
+        case .online: return m.foeName.uppercased()
+        default:      return S("game.p2")
         }
     }
 

@@ -26,6 +26,13 @@ final class Sound {
     private var joinCue: AVAudioPCMBuffer?
     private var halfCue: AVAudioPCMBuffer?
 
+    /// Everything that touches AVFoundation happens here. Activating an audio
+    /// session and synthesising nineteen buffers are both slow enough to be
+    /// seen as a dropped frame - and `setActive` on the main thread is exactly
+    /// the call Xcode flags as a hang risk.
+    private let q = DispatchQueue(label: "com.airhockey.sound", qos: .userInitiated)
+    private var starting = false
+
     private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
     private let heavyHaptic = UIImpactFeedbackGenerator(style: .heavy)
     private let notify = UINotificationFeedbackGenerator()
@@ -41,32 +48,45 @@ final class Sound {
             engine.connect(p, to: mixer, format: format)
             players.append(p)
         }
-        buildBuffers()
+        // The buffers are rendered by `start()`, off the main thread.
     }
 
     // MARK: - session
 
+    /// Safe to call as often as you like: the first call does the work, the
+    /// rest fall straight back out.
     func start() {
-        guard !started else { return }
-        do {
-            let s = AVAudioSession.sharedInstance()
-            // .ambient keeps the player's own music going; the game is not the
-            // reason anyone opened their phone.
-            try s.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
-            try s.setActive(true)
-            try engine.start()
-            players.forEach { $0.play() }
-            started = true
-            lightHaptic.prepare(); heavyHaptic.prepare(); notify.prepare()
-        } catch {
-            started = false
+        guard !started, !starting else { return }
+        starting = true
+        lightHaptic.prepare(); heavyHaptic.prepare(); notify.prepare()
+        q.async { [self] in
+            if hitBuffers.isEmpty { buildBuffers() }
+            var ok = false
+            do {
+                let s = AVAudioSession.sharedInstance()
+                // .ambient keeps the player's own music going; the game is not
+                // the reason anyone opened their phone.
+                try s.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+                try s.setActive(true)
+                try engine.start()
+                players.forEach { $0.play() }
+                ok = true
+            } catch {
+                ok = false
+            }
+            // `started` is the one flag the main thread reads, and it is only
+            // raised once every buffer above is finished and visible to it.
+            DispatchQueue.main.async {
+                self.started = ok
+                self.starting = false
+            }
         }
     }
 
     func stop() {
         guard started else { return }
-        engine.pause()
         started = false
+        q.async { [self] in engine.pause() }
     }
 
     // MARK: - synthesis
@@ -182,7 +202,9 @@ final class Sound {
         guard enabled, started, let buf else { return }
         let p = players[next]
         next = (next + 1) % players.count
-        p.scheduleBuffer(buf, at: nil, options: .interrupts, completionHandler: nil)
+        // Scheduling can block briefly while the render thread is mid-cycle;
+        // a mallet hitting a puck must never wait on it.
+        q.async { p.scheduleBuffer(buf, at: nil, options: .interrupts, completionHandler: nil) }
     }
 
     /// A puck squeezed between a mallet and a wall - or head-butted at a shallow
@@ -193,6 +215,11 @@ final class Sound {
     private static let hitGap: CFTimeInterval = 0.09
 
     func hit(_ speed: Double) {
+        // The buffers are built on `q`; `started` is the flag that says they
+        // exist, and it is raised on the main thread only once that work is
+        // finished. Checking it *before* indexing is what keeps a hit landing
+        // during launch from reaching into an empty array.
+        guard enabled, started, !hitBuffers.isEmpty else { return }
         let now = CACurrentMediaTime()
         guard now - lastHitAt > Sound.hitGap else { return }
         lastHitAt = now
@@ -205,6 +232,7 @@ final class Sound {
     private var lastWallAt: CFTimeInterval = 0
 
     func wall(_ speed: Double) {
+        guard enabled, started, !wallBuffers.isEmpty else { return }
         let t = min(1, max(0, speed / Field.puckMax))
         guard t > 0.06 else { return }
         let now = CACurrentMediaTime()

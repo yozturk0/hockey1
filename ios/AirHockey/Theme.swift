@@ -210,6 +210,13 @@ final class Prefs: ObservableObject {
     /// Last match rules, so the same two people do not re-pick them every time.
     @Published var mode: GameMode { didSet { save() } }
     @Published var half: Bool { didSet { save() } }
+    /// The same three rules for a match against the computer. They are kept
+    /// apart from the two above on purpose: a solo match and a match shared
+    /// with someone on the sofa are picked for different reasons, and changing
+    /// one should not silently rewrite the other.
+    @Published var soloTarget: Int { didSet { save() } }
+    @Published var soloMode: GameMode { didSet { save() } }
+    @Published var soloHalf: Bool { didSet { save() } }
 
     private init() {
         let d = UserDefaults.standard
@@ -217,6 +224,9 @@ final class Prefs: ObservableObject {
         puck = d.string(forKey: "ah_puck") ?? "tema"
         mode = GameMode.from(d.string(forKey: "ah_mode"))
         half = d.object(forKey: "ah_half") as? Bool ?? true
+        soloTarget = d.object(forKey: "ah_solo_target") as? Int ?? soloTargetDefault
+        soloMode = GameMode.from(d.string(forKey: "ah_solo_mode"))
+        soloHalf = d.object(forKey: "ah_solo_half") as? Bool ?? false
         PAL = Palettes.named(theme)
     }
 
@@ -226,6 +236,9 @@ final class Prefs: ObservableObject {
         d.set(puck, forKey: "ah_puck")
         d.set(mode.rawValue, forKey: "ah_mode")
         d.set(half, forKey: "ah_half")
+        d.set(soloTarget, forKey: "ah_solo_target")
+        d.set(soloMode.rawValue, forKey: "ah_solo_mode")
+        d.set(soloHalf, forKey: "ah_solo_half")
     }
 
     var padR: Double { Field.padR }

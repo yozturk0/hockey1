@@ -46,6 +46,12 @@ func S(_ key: String) -> String {
     return s
 }
 
+/// Whether a line exists at all, so a caller can fall back rather than print
+/// a bare key at the player.
+func hasString(_ key: String) -> Bool {
+    strings["en"]?[key] != nil
+}
+
 /// `S(...)` with one number dropped in.
 func S(_ key: String, _ n: Int) -> String {
     S(key).replacingOccurrences(of: "{n}", with: "\(n)")
@@ -72,6 +78,8 @@ private let strings: [String: [String: String]] = [
 
         // menu
         "menu.tagline": "Oda kodunu paylaş, anında oyna.\nKayıt yok, indirme yok.",
+        "menu.play":    "Oyna",
+        "menu.playSub": "Bilgisayara karşı, hemen",
         "menu.online":  "Online Oyna",
         "menu.onlineSub": "Arkadaşınla, uzaktan",
         "menu.localSub": "Tek ekran, çift dokunuş",
@@ -128,6 +136,9 @@ private let strings: [String: [String: String]] = [
 
         // settings
         "set.title":    "Ayarlar",
+        "set.solo":     "Bilgisayara karşı",
+        "set.soloHint": "\"Oyna\" tuşu bu kurallarla başlar",
+        "set.soloHalf": "Sahayı yarıda çevir",
         "set.floor":    "Zemin",
         "set.floorHint": "Çocuklar için açık ve sade zeminler daha rahat görünür.",
         "set.puck":     "Top Rengi",
@@ -157,6 +168,7 @@ private let strings: [String: [String: String]] = [
         // match
         "game.me":      "SEN",
         "game.foe":     "Rakip",
+        "game.bot":     "BİLGİSAYAR",
         "game.p1":      "OYUNCU 1",
         "game.p2":      "OYUNCU 2",
         "game.goal":    "GOL!",
@@ -189,6 +201,8 @@ private let strings: [String: [String: String]] = [
         // game over
         "over.win":     "Kazandın!",
         "over.lose":    "Kaybettin",
+        "over.soloWin": "Kazandın!",
+        "over.soloLose": "Bilgisayar kazandı",
         "over.p1Win":   "Oyuncu 1 Kazandı!",
         "over.p2Win":   "Oyuncu 2 Kazandı!",
         "over.again":   "Tekrar Oyna",
@@ -205,6 +219,11 @@ private let strings: [String: [String: String]] = [
         "net.badURL":   "Sunucu adresi geçersiz",
         "net.lost":     "Bağlantı koptu",
         "net.closed":   "Bağlantı kapandı",
+        "net.badCode":  "4 haneli oda kodunu gir.",
+        "err.create":   "Oda oluşturulamadı, tekrar dene.",
+        "err.notFound": "Bu kodla bir oda bulunamadı.",
+        "err.full":     "Bu oda dolu.",
+        "err.timeout":  "Oda zaman aşımına uğradı.",
     ],
 
     "en": [
@@ -219,6 +238,8 @@ private let strings: [String: [String: String]] = [
         "lang.hint":    "You can change the language here any time.",
 
         "menu.tagline": "Share the room code and play right away.\nNo sign up, no download.",
+        "menu.play":    "Play",
+        "menu.playSub": "Against the computer, right now",
         "menu.online":  "Play Online",
         "menu.onlineSub": "With a friend, far away",
         "menu.localSub": "One screen, two fingers",
@@ -270,6 +291,9 @@ private let strings: [String: [String: String]] = [
         "loc.start":    "Start",
 
         "set.title":    "Settings",
+        "set.solo":     "Against the computer",
+        "set.soloHint": "The \"Play\" button starts a match with these rules",
+        "set.soloHalf": "Turn the rink around at the break",
         "set.floor":    "Floor",
         "set.floorHint": "Light, simple floors are easier for kids to see.",
         "set.puck":     "Puck Colour",
@@ -298,6 +322,7 @@ private let strings: [String: [String: String]] = [
 
         "game.me":      "YOU",
         "game.foe":     "Player 2",
+        "game.bot":     "COMPUTER",
         "game.p1":      "PLAYER 1",
         "game.p2":      "PLAYER 2",
         "game.goal":    "GOAL!",
@@ -327,6 +352,8 @@ private let strings: [String: [String: String]] = [
 
         "over.win":     "You Won!",
         "over.lose":    "You Lost",
+        "over.soloWin": "You Won!",
+        "over.soloLose": "The computer won",
         "over.p1Win":   "Player 1 Won!",
         "over.p2Win":   "Player 2 Won!",
         "over.again":   "Play Again",
@@ -342,5 +369,10 @@ private let strings: [String: [String: String]] = [
         "net.badURL":   "That server address does not work",
         "net.lost":     "Connection lost",
         "net.closed":   "The connection closed",
+        "net.badCode":  "Type the 4-letter room code.",
+        "err.create":   "The room could not be made. Please try again.",
+        "err.notFound": "No room was found with that code.",
+        "err.full":     "This room is full.",
+        "err.timeout":  "The room was closed because nobody played for a while.",
     ],
 ]

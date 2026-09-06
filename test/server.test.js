@@ -51,7 +51,11 @@ function client(tag) {
   B.send({ t: 'join', code: A.code, name: 'Burak' });
   await wait(500);
   ok('guest is seated as side b', B.side === 'b', B.side);
-  ok('both sides told the peer arrived', A.peer === true && B.peer === true);
+  /* Only the player who was already sitting there is told. Sending it to the
+     arrival as well is what used to pop "your friend joined" up in front of
+     someone reconnecting to their own empty lobby. */
+  ok('the waiting player is told the peer arrived', A.peer === true);
+  ok('the arrival is not told about themselves', B.peer === null);
   ok('the guest is told the rules', B.joined.mode === 'sansli', B.joined.mode);
 
   B.send({ t: 'opts', mode: 'klasik', half: false });

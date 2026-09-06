@@ -110,14 +110,23 @@ struct MenuView: View {
                 .foregroundStyle(T.dim)
                 .multilineTextAlignment(.center)
 
+            /* "Play" comes first and needs no setup screen at all: somebody
+               who has never seen this game is holding a mallet one tap after
+               opening it. The two-player and online routes keep their setup,
+               because those genuinely have something to agree on. */
             VStack(spacing: 11) {
-                Button { m.startOnline() } label: {
-                    row(icon: "globe", title: S("menu.online"), sub: S("menu.onlineSub"))
+                Button { m.startSolo() } label: {
+                    row(icon: "bolt.fill", title: S("menu.play"), sub: S("menu.playSub"))
                 }
                 .buttonStyle(PrimaryButton())
 
                 Button { m.go(.local) } label: {
                     row(icon: Device.isPad ? "ipad.gen2" : "iphone.gen3", title: Device.sameDevice, sub: S("menu.localSub"))
+                }
+                .buttonStyle(PlainButton())
+
+                Button { m.startOnline() } label: {
+                    row(icon: "globe", title: S("menu.online"), sub: S("menu.onlineSub"))
                 }
                 .buttonStyle(PlainButton())
             }
@@ -428,6 +437,18 @@ struct SettingsView: View {
                                    selection: lang.code,
                                    swatch: { _ in AnyView(EmptyView()) },
                                    pick: { lang.set($0) })
+                    }
+
+                    // A match against the computer has no setup screen, by
+                    // design - "Play" starts one instantly. Its rules live
+                    // here instead, so instant is the default rather than the
+                    // only option, and solo is as adjustable as the other two.
+                    card(S("set.solo"), S("set.soloHint")) {
+                        ScorePicker(value: $prefs.soloTarget)
+                        ModePicker(value: $prefs.soloMode)
+                        OptionToggle(title: S("com.half"), blurb: S("set.soloHalf"),
+                                     isOn: $prefs.soloHalf)
+                        MatchPlan(target: prefs.soloTarget, enabled: prefs.soloHalf)
                     }
 
                     card(S("set.floor"), S("set.floorHint")) {

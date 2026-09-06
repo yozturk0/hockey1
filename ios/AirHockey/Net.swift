@@ -73,19 +73,36 @@ final class Net: NSObject {
         session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
     }
 
+    /// A per-install id, only ever used to recognise a returning player so a
+    /// reconnect lands back in the seat it left. Nothing else is derived from
+    /// it and it never leaves this app's own server.
+    static let clientID: String = {
+        let d = UserDefaults.standard
+        if let v = d.string(forKey: "ah_cid"), v.count >= 6 { return v }
+        let v = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        d.set(v, forKey: "ah_cid")
+        return v
+    }()
+
     private var wsURL: URL? {
         var s = serverBase.trimmingCharacters(in: .whitespaces)
         if s.hasSuffix("/") { s.removeLast() }
         if s.hasPrefix("https://") { s = "wss://" + s.dropFirst(8) }
         else if s.hasPrefix("http://") { s = "ws://" + s.dropFirst(7) }
         else if !s.hasPrefix("ws://") && !s.hasPrefix("wss://") { s = "ws://" + s }
-        return URL(string: s + "/ws")
+        return URL(string: s + "/ws?pid=" + Net.clientID)
     }
 
     // MARK: - lifecycle
 
     func connect() {
-        guard task == nil || task?.state != .running else { return }
+        if let t = task {
+            guard t.state != .running else { return }
+            // A task stuck in .suspended or .canceling would otherwise be
+            // dropped on the floor still holding its socket.
+            t.cancel(with: .goingAway, reason: nil)
+            task = nil
+        }
         guard let url = wsURL else {
             delegate?.netStatus(.failed(S("net.badURL")))
             return
@@ -260,7 +277,15 @@ final class Net: NSObject {
                                    foe: mySide == "a" ? b : a)
 
         case "err":
-            delegate?.netError(obj["m"] as? String ?? "Bilinmeyen hata")
+            /* The server's own `m` is Turkish prose. `k` is the machine-
+               readable kind, which is what this app translates - an English
+               player used to be shown the Turkish sentence. */
+            let raw = obj["m"] as? String ?? ""
+            if let k = obj["k"] as? String, hasString("err." + k) {
+                delegate?.netError(S("err." + k))
+            } else {
+                delegate?.netError(raw.isEmpty ? S("net.lost") : raw)
+            }
 
         case "s":
             delegate?.netSnapshot(parseSnapshot(obj))
