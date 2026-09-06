@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- ProMotion opt-in. Without this key iOS caps every app to 60 Hz on
+	     120 Hz devices no matter what CADisplayLink asks for; the Ticker's
+	     CAFrameRateRange(60...120, preferred: 120) is only honoured once this
+	     is present. -->
+	<key>CADisableMinimumFrameDuration</key>
+	<true/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

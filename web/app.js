@@ -177,6 +177,8 @@ const App = {
   snapAt: 0,
   ping: null,
   peerOn: false,
+  /* What we last told the player about the other seat; null = nothing yet. */
+  peerSaid: null,
   lastCd: -1,
   lastState: -1,
   game: null,          // local engine
@@ -226,6 +228,26 @@ function toast(msg, ms = 2600) {
 
 /* ============================ networking ============================ */
 
+/* A per-browser id, only ever used to recognise a returning player and give
+   them their own seat back. It never leaves this origin, and a private window
+   (or a browser that refuses storage) simply gets a fresh one each time. */
+let cachedId = null;
+function clientId() {
+  if (cachedId) return cachedId;
+  try {
+    cachedId = localStorage.getItem('ah_cid');
+    if (!cachedId) {
+      cachedId = Math.random().toString(36).slice(2, 12) +
+                 Math.random().toString(36).slice(2, 6);
+      localStorage.setItem('ah_cid', cachedId);
+    }
+  } catch (_) {
+    cachedId = cachedId || (Math.random().toString(36).slice(2, 12) +
+                            Math.random().toString(36).slice(2, 6));
+  }
+  return cachedId;
+}
+
 const Net = {
   ws: null,
   ready: false,
@@ -245,10 +267,13 @@ const Net = {
      are the same Node process. */
   url() {
     const q = new URLSearchParams(location.search).get('server');
-    if (q) return q;
-    if (window.AH_WS) return window.AH_WS;
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${proto}//${location.host}/ws`;
+    const base = q || window.AH_WS ||
+      `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
+    /* The seat id rides along in the query string, so a reconnect lands back
+       in the seat it left instead of being handed whichever one is free. */
+    const pid = clientId();
+    if (!pid) return base;
+    return base + (base.indexOf('?') === -1 ? '?' : '&') + 'pid=' + pid;
   },
 
   connect() {
@@ -388,6 +413,7 @@ function onMessage(m) {
       App.gameMode = m.mode || MODES.CLASSIC;
       App.halfAt = m.half || 0;
       App.halfReady = false;
+      App.peerSaid = null;
       Net.wantRoom = m.code;
       $('lobby-code').textContent = m.code;
       setHudTarget(m.target, App.halfAt, App.gameMode);
@@ -414,10 +440,16 @@ function onMessage(m) {
       $('hud-me').textContent = mine;
       $('hud-foe').textContent = App.foeName;
       App.peerOn = !!theirsHere;
+      if (App.peerSaid === null) App.peerSaid = App.peerOn;
       break;
     }
 
     case 'peer':
+      /* The server only sends this to the *other* seat, so it always means the
+         opponent. The change check is belt and braces: the same news must
+         never be announced twice. */
+      if (App.mode !== 'online' || App.peerSaid === !!m.on) break;
+      App.peerSaid = !!m.on;
       if (m.on) { Snd.join(); toast(t('net.peerIn')); }
       else { toast(t('net.peerOut'), 4000); }
       break;

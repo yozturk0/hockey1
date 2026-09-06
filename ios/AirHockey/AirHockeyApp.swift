@@ -10,8 +10,10 @@ struct AirHockeyApp: App {
         }
         .onChange(of: phase) { _, new in
             switch new {
-            case .active:     Sound.shared.start()
-            case .background: Sound.shared.stop()
+            case .active:
+                Sound.shared.start()
+            case .background:
+                Sound.shared.stop()
             default: break
             }
         }

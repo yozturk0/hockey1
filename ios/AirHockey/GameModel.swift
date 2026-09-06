@@ -4,7 +4,13 @@ import SwiftUI
 import Combine
 
 enum Screen { case menu, online, lobby, local, game }
-enum Mode { case none, online, local }
+enum Mode { case none, online, local, solo }
+
+/// Solo is deliberately short *by default*: a first-timer should reach a
+/// result, not a commitment. The web build opens on the same number. It is a
+/// starting point rather than a rule - Settings can move it, and the choice is
+/// remembered, so a solo match is as configurable as any other.
+let soloTargetDefault = 5
 
 /// Per-frame render state. Deliberately NOT @Published: it changes 60 times a
 /// second and the Canvas reads it directly, so publishing would thrash SwiftUI.
@@ -92,6 +98,8 @@ final class GameModel: ObservableObject, NetDelegate {
     let net = Net()
     let world = World()
     var engine: Engine?
+    /// Solo mode only: the thing driving the top mallet.
+    var bot: Bot?
 
     private var snap: Snapshot?
     private var snapAt: CFTimeInterval = 0
@@ -100,7 +108,13 @@ final class GameModel: ObservableObject, NetDelegate {
     private var lastSentX: Double = -1
     private var lastSentY: Double = -1
     private var centerClearAt: CFTimeInterval = 0
-    private var toastClearAt: CFTimeInterval = 0
+    /// The toast's own countdown. It used to be cleared by `tick`, which only
+    /// runs while the rink is on screen - so a toast raised in the menu or the
+    /// lobby stayed there for ever.
+    private var toastTask: Task<Void, Never>?
+    /// What we last told the player about the other seat, so the same news is
+    /// never announced twice.
+    private var peerAnnounced: Bool?
 
     init() {
         net.delegate = self
@@ -174,7 +188,7 @@ final class GameModel: ObservableObject, NetDelegate {
     func joinRoom() {
         Sound.shared.ui()
         let c = joinCode.uppercased().filter { $0.isLetter || $0.isNumber }
-        guard c.count == 4 else { return flash("4 haneli oda kodunu gir.") }
+        guard c.count == 4 else { return flash(S("net.badCode")) }
         guard status == .connected else {
             flash(S("net.wait"))
             net.connect()
@@ -209,6 +223,8 @@ final class GameModel: ObservableObject, NetDelegate {
         Sound.shared.ui()
         net.leave()
         mode = .none
+        foePresent = false
+        peerAnnounced = nil
         screen = .online
     }
 
@@ -231,9 +247,41 @@ final class GameModel: ObservableObject, NetDelegate {
         net.join(code: code)
     }
 
+    /// Solo. There is no setup screen on purpose: the whole point of this
+    /// button is that a player who has never seen the game is holding a mallet
+    /// a second after tapping it. Everything it needs is either remembered or
+    /// sensible.
+    func startSolo() {
+        Sound.shared.ui()
+        mode = .solo
+        // A match against the computer is played under the player's own rules,
+        // exactly like the other two modes; only the way you get into it is
+        // shorter, because the whole point of this button is starting instantly.
+        let p = Prefs.shared
+        target = p.soloTarget
+        padR = p.padR
+        rMe = padR; rFoe = padR
+        gameMode = p.soloMode
+        let e = Engine(target: p.soloTarget, padR: padR, halftime: p.soloHalf,
+                       mode: p.soloMode)
+        e.startCountdown()
+        engine = e
+        bot = Bot()
+        halfAt = e.halfAt
+        scoreMe = 0; scoreFoe = 0
+        lastCountdown = -1
+        lastState = .lobby
+        flip = false
+        showHalftime = false
+        world.reset()
+        showOverlay = false
+        screen = .game
+    }
+
     func startLocal() {
         Sound.shared.ui()
         mode = .local
+        bot = nil
         target = localTarget
         padR = Prefs.shared.padR
         rMe = padR; rFoe = padR
@@ -251,7 +299,6 @@ final class GameModel: ObservableObject, NetDelegate {
         world.reset()
         showOverlay = false
         screen = .game
-        UIApplication.shared.isIdleTimerDisabled = true
     }
 
     func enterGame() {
@@ -265,15 +312,16 @@ final class GameModel: ObservableObject, NetDelegate {
         lastCountdown = -1
         showOverlay = false
         screen = .game
-        UIApplication.shared.isIdleTimerDisabled = true
     }
 
     func exitGame() {
         Sound.shared.ui()
-        UIApplication.shared.isIdleTimerDisabled = false
         if mode == .online { net.leave() }
         mode = .none
+        foePresent = false
+        peerAnnounced = nil
         engine = nil
+        bot = nil
         snap = nil
         showOverlay = false
         showHalftime = false
@@ -285,8 +333,9 @@ final class GameModel: ObservableObject, NetDelegate {
     func playAgain() {
         Sound.shared.ui()
         showOverlay = false
-        if mode == .local {
+        if mode == .local || mode == .solo {
             engine?.restart()
+            bot?.reset()
             lastCountdown = -1
             flip = false
             showHalftime = false
@@ -330,9 +379,14 @@ final class GameModel: ObservableObject, NetDelegate {
         }
     }
 
-    func flash(_ msg: String) {
+    func flash(_ msg: String, seconds: Double = 2.8) {
         toast = msg
-        toastClearAt = CACurrentMediaTime() + 2.8
+        toastTask?.cancel()
+        toastTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            self?.toast = nil
+        }
     }
 
     private func setCenter(_ txt: String, goal: Bool, seconds: Double) {
@@ -361,12 +415,11 @@ final class GameModel: ObservableObject, NetDelegate {
         let dt = min(raw, 0.1)
         let now = CACurrentMediaTime()
         if !centerText.isEmpty && now > centerClearAt { centerText = "" }
-        if toast != nil && now > toastClearAt { toast = nil }
 
         switch mode {
-        case .local:  stepLocal(dt)
-        case .online: stepOnline(dt)
-        case .none:   break
+        case .local, .solo: stepLocal(dt)
+        case .online:       stepOnline(dt)
+        case .none:         break
         }
 
         if world.shake > 0.01 { world.shake *= pow(0.0015, dt) } else { world.shake = 0 }
@@ -449,10 +502,13 @@ final class GameModel: ObservableObject, NetDelegate {
 
     private func stepLocal(_ dt: Double) {
         guard let g = engine else { return }
+        let solo = mode == .solo
         g.setInput(side: "a", x: world.myPad.tx, y: world.myPad.ty)
-        g.setInput(side: "b", x: world.foePad.tx, y: world.foePad.ty)
+        if let bot { bot.think(g, dt: dt) }
+        else { g.setInput(side: "b", x: world.foePad.tx, y: world.foePad.ty) }
 
         let prev = g.state
+        let prevA = g.scoreA, prevB = g.scoreB
         g.step(dt: dt)
 
         for e in g.events {
@@ -465,16 +521,24 @@ final class GameModel: ObservableObject, NetDelegate {
                 Sound.shared.wall(e.intensity)
             case 2:
                 let bottomScored = e.y < Field.H / 2
-                Sound.shared.goal(mine: true)
+                Sound.shared.goal(mine: solo ? bottomScored : true)
                 world.shake = 1
-                setCenter(bottomScored ? "OYUNCU 1" : "OYUNCU 2", goal: true, seconds: 1.2)
+                setCenter(solo ? S(bottomScored ? "game.goal" : "game.foeGoal")
+                               : S(bottomScored ? "fx.p1" : "fx.p2"),
+                          goal: true, seconds: 1.2)
             default:
                 Sound.shared.ui()
-                setCenter(luckyText(Int(e.intensity), mine: e.y >= Field.H / 2, local: true),
+                setCenter(luckyText(Int(e.intensity), mine: e.y >= Field.H / 2, local: !solo),
                           goal: true, seconds: 1.4)
             }
         }
         g.clearEvents()
+
+        // The bot drifts toward the player's level after every goal.
+        if let bot {
+            if g.scoreA != prevA { bot.onGoal(botScored: false) }
+            if g.scoreB != prevB { bot.onGoal(botScored: true) }
+        }
 
         if g.state == .halftime && prev != .halftime {
             enterHalftime(g)
@@ -487,9 +551,12 @@ final class GameModel: ObservableObject, NetDelegate {
 
         if g.state == .over && prev != .over {
             overlayWin = g.winner == "a"
-            overlayTitle = S(overlayWin ? "over.p1Win" : "over.p2Win")
+            overlayTitle = solo ? S(overlayWin ? "over.soloWin" : "over.soloLose")
+                                : S(overlayWin ? "over.p1Win" : "over.p2Win")
             showOverlay = true
-            Sound.shared.over(win: true)
+            // On one shared phone somebody always wins, so the fanfare is
+            // always the happy one. Solo has a loser, and it can be you.
+            Sound.shared.over(win: solo ? overlayWin : true)
         }
 
         if scoreMe != g.scoreA { scoreMe = g.scoreA }
@@ -507,6 +574,7 @@ final class GameModel: ObservableObject, NetDelegate {
             world.myPad.y = g.padA.y; world.myPad.ty = g.padA.y
             world.foePad.x = g.padB.x; world.foePad.tx = g.padB.x
             world.foePad.y = g.padB.y; world.foePad.ty = g.padB.y
+            bot?.reset()
         }
     }
 
@@ -552,6 +620,7 @@ final class GameModel: ObservableObject, NetDelegate {
             self.halfReady = false
             self.foeReady = false
             self.lastState = .lobby
+            self.peerAnnounced = nil
             if self.screen != .game { self.screen = .lobby }
         }
     }
@@ -566,6 +635,7 @@ final class GameModel: ObservableObject, NetDelegate {
             self.myName = myName
             self.foeName = foeName
             self.foePresent = foePresent
+            if self.peerAnnounced == nil { self.peerAnnounced = foePresent }
         }
     }
 
@@ -576,8 +646,13 @@ final class GameModel: ObservableObject, NetDelegate {
         }
     }
 
+    /// The server only sends this to the *other* seat, so it always means the
+    /// opponent. The change check is belt and braces: a duplicate must never
+    /// announce a friend who is already sitting there.
     nonisolated func netPeer(online: Bool) {
         Task { @MainActor in
+            guard self.mode == .online, self.peerAnnounced != online else { return }
+            self.peerAnnounced = online
             if online { Sound.shared.join(); self.flash(S("net.peerIn")) }
             else { self.flash(S("net.peerOut")) }
         }
@@ -589,6 +664,8 @@ final class GameModel: ObservableObject, NetDelegate {
             if self.screen == .lobby || self.screen == .game {
                 self.net.wantRoom = nil
                 self.mode = .none
+                self.foePresent = false
+                self.peerAnnounced = nil
                 self.screen = .online
             }
         }
